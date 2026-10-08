@@ -16,7 +16,7 @@ import type {
   ReviewRecord,
   WebhookEventRecord,
 } from "../types/domain.js";
-import type { DeviceRegistrationRecord, FareRuleRecord, InquiryListFilter, RentalEnquiryListFilter, PaymentListFilter, Repositories } from "./types.js";
+import type { DeviceRegistrationRecord, FareRuleRecord, FleetRecord, FleetFareRuleRecord, InquiryListFilter, RentalEnquiryListFilter, PaymentListFilter, Repositories } from "./types.js";
 import type { RouteCatalogRecord } from "./route-catalog-types.js";
 import type {
   CancellationPolicyRecord,
@@ -1518,40 +1518,16 @@ export async function createPostgresRepositories(databaseUrl: string): Promise<R
         async getActive() {
           const rows = await query(client, "select * from fare_rules where is_active=true order by created_at desc limit 1");
           if (!rows[0]) return null;
-          return {
-            id: String(rows[0].id),
-            version: String(rows[0].version),
-            config: rows[0].config,
-            effectiveFrom: new Date(String(rows[0].effective_from)).toISOString(),
-            effectiveTo: rows[0].effective_to ? new Date(String(rows[0].effective_to)).toISOString() : null,
-            isActive: Boolean(rows[0].is_active),
-            createdAt: new Date(String(rows[0].created_at)).toISOString(),
-          };
+          return mapFareRule(rows[0]);
         },
         async getByVersion(version: string) {
           const rows = await query(client, "select * from fare_rules where version=$1 limit 1", [version]);
           if (!rows[0]) return null;
-          return {
-            id: String(rows[0].id),
-            version: String(rows[0].version),
-            config: rows[0].config,
-            effectiveFrom: new Date(String(rows[0].effective_from)).toISOString(),
-            effectiveTo: rows[0].effective_to ? new Date(String(rows[0].effective_to)).toISOString() : null,
-            isActive: Boolean(rows[0].is_active),
-            createdAt: new Date(String(rows[0].created_at)).toISOString(),
-          };
+          return mapFareRule(rows[0]);
         },
         async listAll() {
           const rows = await query(client, "select * from fare_rules order by created_at desc");
-          return rows.map((r) => ({
-            id: String(r.id),
-            version: String(r.version),
-            config: r.config,
-            effectiveFrom: new Date(String(r.effective_from)).toISOString(),
-            effectiveTo: r.effective_to ? new Date(String(r.effective_to)).toISOString() : null,
-            isActive: Boolean(r.is_active),
-            createdAt: new Date(String(r.created_at)).toISOString(),
-          }));
+          return rows.map(mapFareRule);
         },
         async save(record: FareRuleRecord) {
           if (record.isActive) {
@@ -1563,16 +1539,23 @@ export async function createPostgresRepositories(databaseUrl: string): Promise<R
           }
           await query(
             client,
-            `insert into fare_rules (id, version, config, effective_from, effective_to, is_active, created_at)
-             values ($1,$2,$3::jsonb,$4,$5,$6,$7)
+            `insert into fare_rules (id, version, config, effective_from, effective_to, is_active, created_at,
+                                    night_start_hour, night_end_hour, min_km_per_day, same_day_round_multiplier)
+             values ($1,$2,$3::jsonb,$4,$5,$6,$7,$8,$9,$10,$11)
              on conflict (version) do update set
                config=excluded.config,
                is_active=excluded.is_active,
                effective_from=excluded.effective_from,
-               effective_to=excluded.effective_to`,
+               effective_to=excluded.effective_to,
+               night_start_hour=excluded.night_start_hour,
+               night_end_hour=excluded.night_end_hour,
+               min_km_per_day=excluded.min_km_per_day,
+               same_day_round_multiplier=excluded.same_day_round_multiplier`,
             [
               record.id, record.version, JSON.stringify(record.config),
               record.effectiveFrom, record.effectiveTo || null, record.isActive, record.createdAt,
+              record.nightStartHour ?? null, record.nightEndHour ?? null,
+              record.minKmPerDay ?? null, record.sameDayRoundMultiplier ?? null,
             ],
           );
           return record;
@@ -1590,17 +1573,65 @@ export async function createPostgresRepositories(databaseUrl: string): Promise<R
             [now, version],
           );
           if (!rows[0]) return null;
-          return {
-            id: String(rows[0].id),
-            version: String(rows[0].version),
-            config: rows[0].config,
-            effectiveFrom: new Date(String(rows[0].effective_from)).toISOString(),
-            effectiveTo: rows[0].effective_to ? new Date(String(rows[0].effective_to)).toISOString() : null,
-            isActive: Boolean(rows[0].is_active),
-            createdAt: new Date(String(rows[0].created_at)).toISOString(),
-          };
+          return mapFareRule(rows[0]);
         },
       },
+
+        fleets: {
+          async list() {
+            const rows = await query(client, "select * from fleets order by sort_order asc, code asc");
+            return rows.map(mapFleet);
+          },
+          async get(code: string) {
+            const rows = await query(client, "select * from fleets where code=$1 limit 1", [code]);
+            if (!rows[0]) return null;
+            return mapFleet(rows[0]);
+          },
+          async update(code: string, patch: Partial<FleetRecord>) {
+            const rows = await query(
+              client,
+              `update fleets set
+                 name=coalesce($2,name), seats=coalesce($3,seats),
+                 luggage_capacity=coalesce($4,luggage_capacity),
+                 image_url=coalesce($5,image_url), description=coalesce($6,description),
+                 sort_order=coalesce($7,sort_order), is_active=coalesce($8,is_active),
+                 updated_at=now()
+               where code=$1 returning *`,
+              [code, patch.name ?? null, patch.seats ?? null, patch.luggageCapacity ?? null,
+               patch.imageUrl ?? null, patch.description ?? null, patch.sortOrder ?? null,
+               patch.isActive ?? null],
+            );
+            if (!rows[0]) return null;
+            return mapFleet(rows[0]);
+          },
+        },
+
+        fleetFareRules: {
+          async listByFareRuleId(fareRuleId: string) {
+            const rows = await query(
+              client,
+              "select * from fleet_fare_rules where fare_rule_id=$1 order by fleet_code asc",
+              [fareRuleId],
+            );
+            return rows.map(mapFleetFareRule);
+          },
+          async upsert(fareRuleId: string, fleetCode: string, values: { perKm: number; driverAllowance: number; nightAllowance: number }) {
+            const rows = await query(
+              client,
+              `insert into fleet_fare_rules (fare_rule_id, fleet_code, per_km, driver_allowance, night_allowance)
+               values ($1,$2,$3,$4,$5)
+               on conflict (fare_rule_id, fleet_code) do update set
+                 per_km=excluded.per_km,
+                 driver_allowance=excluded.driver_allowance,
+                 night_allowance=excluded.night_allowance,
+                 updated_at=now()
+               returning *`,
+              [fareRuleId, fleetCode, values.perKm, values.driverAllowance, values.nightAllowance],
+            );
+            if (!rows[0]) throw new Error("fleet_fare_rules upsert returned no row");
+            return mapFleetFareRule(rows[0]);
+          },
+        },
     };
   }
 
@@ -1608,6 +1639,50 @@ export async function createPostgresRepositories(databaseUrl: string): Promise<R
 }
 
 
+
+function mapFareRule(row: Record<string, unknown>): FareRuleRecord {
+  return {
+    id: String(row.id),
+    version: String(row.version),
+    config: row.config,
+    effectiveFrom: new Date(String(row.effective_from)).toISOString(),
+    effectiveTo: row.effective_to ? new Date(String(row.effective_to)).toISOString() : null,
+    isActive: Boolean(row.is_active),
+    createdAt: new Date(String(row.created_at)).toISOString(),
+    nightStartHour: row.night_start_hour !== null && row.night_start_hour !== undefined ? Number(row.night_start_hour) : null,
+    nightEndHour: row.night_end_hour !== null && row.night_end_hour !== undefined ? Number(row.night_end_hour) : null,
+    minKmPerDay: row.min_km_per_day !== null && row.min_km_per_day !== undefined ? Number(row.min_km_per_day) : null,
+    sameDayRoundMultiplier: row.same_day_round_multiplier !== null && row.same_day_round_multiplier !== undefined ? Number(row.same_day_round_multiplier) : null,
+  };
+}
+
+function mapFleet(row: Record<string, unknown>): FleetRecord {
+  return {
+    code: String(row.code),
+    name: String(row.name),
+    seats: Number(row.seats),
+    luggageCapacity: Number(row.luggage_capacity ?? 0),
+    imageUrl: row.image_url ? String(row.image_url) : null,
+    description: row.description ? String(row.description) : null,
+    sortOrder: Number(row.sort_order ?? 0),
+    isActive: Boolean(row.is_active),
+    createdAt: new Date(String(row.created_at)).toISOString(),
+    updatedAt: new Date(String(row.updated_at)).toISOString(),
+  };
+}
+
+function mapFleetFareRule(row: Record<string, unknown>): FleetFareRuleRecord {
+  return {
+    id: String(row.id),
+    fareRuleId: String(row.fare_rule_id),
+    fleetCode: String(row.fleet_code),
+    perKm: Number(row.per_km),
+    driverAllowance: Number(row.driver_allowance),
+    nightAllowance: Number(row.night_allowance),
+    createdAt: new Date(String(row.created_at)).toISOString(),
+    updatedAt: new Date(String(row.updated_at)).toISOString(),
+  };
+}
 
 function mapProfile(row: Record<string, unknown>): ProfileRecord {
   return {

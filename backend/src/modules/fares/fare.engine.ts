@@ -304,6 +304,13 @@ export function calculateFare(input: FareEngineInput): FareEngineResult {
     hasCustomRate = true;
   }
 
+  // Slice 1: per-tier commercial values from DB-backed fleet_fare_rules.
+  // Falls back to the legacy scalar overrides, then to the historical defaults.
+  const overrideDriverAllowance =
+    vehicleOverride && typeof vehicleOverride.driverAllowance === "number" && vehicleOverride.driverAllowance >= 0
+      ? vehicleOverride.driverAllowance
+      : undefined;
+
   const fareVersion = input.fareVersion ?? FARE_RULES_VERSION_DEFAULT;
 
   // Dossier Authoritative Path: check dossier strict precedence per tier
@@ -347,7 +354,7 @@ export function calculateFare(input: FareEngineInput): FareEngineResult {
         nightAllowance: 0,
         driverAllowance:
           isForce && (input.ruleOverrides?.catalogItemType === "tour" || input.ruleOverrides?.catalogItemType === "package")
-            ? (input.ruleOverrides?.driverAllowance ?? 500)
+            ? (overrideDriverAllowance ?? input.ruleOverrides?.driverAllowance ?? 500)
             : 0,
         distanceKm: input.ruleOverrides?.catalogDistanceKm ?? input.distanceKm,
         billedKm: input.ruleOverrides?.catalogDistanceKm ?? input.distanceKm,
@@ -371,7 +378,7 @@ export function calculateFare(input: FareEngineInput): FareEngineResult {
         const days = Math.max(1, calendarDaysInclusiveIst(input.pickupDatetime, input.returnDatetime));
         const billedKm = input.distanceKm < 300 ? input.distanceKm * 2 : input.distanceKm;
         const baseFare = roundRupees(billedKm * spec.perKm);
-        const driverAllowance = (input.ruleOverrides?.driverAllowance !== undefined ? input.ruleOverrides.driverAllowance : 500) * days;
+        const driverAllowance = (overrideDriverAllowance ?? input.ruleOverrides?.driverAllowance ?? 500) * days;
         return finalize({
           tripType: "round-trip",
           vehicleTier: input.vehicleTier,
@@ -437,7 +444,7 @@ export function calculateFare(input: FareEngineInput): FareEngineResult {
             : (input.ruleOverrides.catalogDistanceKm ?? input.distanceKm) * spec.perKm)
         : input.ruleOverrides.packageBasePrice + PACKAGE_UPGRADES[vehicleId],
       nightAllowance: 0,
-      driverAllowance: isForce ? 500 : 0,
+      driverAllowance: isForce ? (overrideDriverAllowance ?? 500) : 0,
       distanceKm: input.ruleOverrides.catalogDistanceKm ?? input.distanceKm,
       billedKm: isForce
         ? ((input.ruleOverrides.catalogDistanceKm ?? input.distanceKm) < 300
@@ -468,7 +475,7 @@ export function calculateFare(input: FareEngineInput): FareEngineResult {
       fareVersion,
       baseFare: lp.fares[vehicleId],
       nightAllowance: 0,
-      driverAllowance: isForce ? 500 : 0,
+      driverAllowance: isForce ? (overrideDriverAllowance ?? 500) : 0,
       distanceKm: lp.km,
       billedKm: lp.km,
       alwaysRoundTrip: isForce,
@@ -528,7 +535,7 @@ export function calculateFare(input: FareEngineInput): FareEngineResult {
       fareVersion,
       baseFare: catalogFare,
       nightAllowance: 0,
-      driverAllowance: isForce ? 500 : 0,
+      driverAllowance: isForce ? (overrideDriverAllowance ?? 500) : 0,
       distanceKm: route.km,
       billedKm: route.km,
       alwaysRoundTrip: isForce,
@@ -599,9 +606,14 @@ function finalize(args: {
   const overrides = args.ruleOverrides;
   const isNight = isNightPickup(args.pickupDatetime, overrides);
 
-  const standardNight = isGroupExceptionVehicle(args.vehicleTier)
-    ? (overrides?.nightAllowanceTempo ?? nightAllowanceFor(args.vehicleTier))
-    : (overrides?.nightAllowanceCab ?? nightAllowanceFor(args.vehicleTier));
+  const tierNightOverride = overrides?.vehicles?.find(
+    (v) => v.tier === args.vehicleTier,
+  )?.nightAllowance;
+  const standardNight = tierNightOverride !== undefined && tierNightOverride >= 0
+    ? tierNightOverride
+    : isGroupExceptionVehicle(args.vehicleTier)
+      ? (overrides?.nightAllowanceTempo ?? nightAllowanceFor(args.vehicleTier))
+      : (overrides?.nightAllowanceCab ?? nightAllowanceFor(args.vehicleTier));
 
   let nightRate = standardNight;
   if (typeof overrides?.nightChargeInr === "number" && overrides.nightChargeInr > 0) {

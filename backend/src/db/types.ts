@@ -276,6 +276,17 @@ export type Repositories = {
     save(record: FareRuleRecord): Promise<FareRuleRecord>;
     activate(version: string): Promise<FareRuleRecord | null>;
   };
+
+  fleets: {
+    list(): Promise<FleetRecord[]>;
+    get(code: string): Promise<FleetRecord | null>;
+    update(code: string, patch: Partial<FleetRecord>): Promise<FleetRecord | null>;
+  };
+
+  fleetFareRules: {
+    listByFareRuleId(fareRuleId: string): Promise<FleetFareRuleRecord[]>;
+    upsert(fareRuleId: string, fleetCode: string, values: { perKm: number; driverAllowance: number; nightAllowance: number }): Promise<FleetFareRuleRecord>;
+  };
 };
 
 export type DeviceRegistrationRecord = {
@@ -298,4 +309,33 @@ export type FareRuleRecord = {
   effectiveTo?: string | null;
   isActive: boolean;
   createdAt: string;
+  // Slice 1: version-level commercial knobs (NULL = fall back to config JSONB, then engine defaults)
+  nightStartHour?: number | null;
+  nightEndHour?: number | null;
+  minKmPerDay?: number | null;
+  sameDayRoundMultiplier?: number | null;
+};
+
+export type FleetRecord = {
+  code: string;
+  name: string;
+  seats: number;
+  luggageCapacity: number;
+  imageUrl?: string | null;
+  description?: string | null;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type FleetFareRuleRecord = {
+  id: string;
+  fareRuleId: string;
+  fleetCode: string;
+  perKm: number;
+  driverAllowance: number;
+  nightAllowance: number;
+  createdAt: string;
+  updatedAt: string;
 };

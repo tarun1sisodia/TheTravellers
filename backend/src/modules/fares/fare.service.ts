@@ -226,10 +226,33 @@ export function createFareService(fareVersion: string, db?: Repositories) {
           ? (cfg.outstation as Record<string, unknown>)
           : {};
 
+      // Slice 1: normalized fleet fare rules (fleet_fare_rules) take precedence over
+      // the legacy config JSONB. Version-level knobs come from fare_rules columns first.
+      const dbFleetRules = activeRule && db ? await db.fleetFareRules.listByFareRuleId(activeRule.id) : [];
+      const dbVehicles: FareVehicleOverride[] | undefined = dbFleetRules.length > 0
+        ? dbFleetRules.map((r) => ({
+            tier: r.fleetCode,
+            perKm: r.perKm,
+            driverAllowance: r.driverAllowance,
+            nightAllowance: r.nightAllowance,
+          }))
+        : undefined;
+      const dbNightStartHour = activeRule?.nightStartHour ?? undefined;
+      const dbNightEndHour = activeRule?.nightEndHour ?? undefined;
+      const dbMinKmPerDay = activeRule?.minKmPerDay ?? undefined;
+      const dbSameDayRoundMultiplier = activeRule?.sameDayRoundMultiplier !== null && activeRule?.sameDayRoundMultiplier !== undefined
+        ? Number(activeRule.sameDayRoundMultiplier) : undefined;
+      // Per-fleet allowances: group vehicles (tempo/urbania) vs others, from the active version's rows
+      const allowanceFor = (tier: string, kind: "driver" | "night"): number | undefined => {
+        const row = dbFleetRules.find((r) => r.fleetCode === tier);
+        if (!row) return undefined;
+        return kind === "driver" ? row.driverAllowance : row.nightAllowance;
+      };
+
       const nightStartHour =
-        typeof outstationCfg.nightStartHour === "number" ? outstationCfg.nightStartHour : undefined;
+        dbNightStartHour ?? (typeof outstationCfg.nightStartHour === "number" ? outstationCfg.nightStartHour : undefined);
       const nightEndHour =
-        typeof outstationCfg.nightEndHour === "number" ? outstationCfg.nightEndHour : undefined;
+        dbNightEndHour ?? (typeof outstationCfg.nightEndHour === "number" ? outstationCfg.nightEndHour : undefined);
 
       // Check package in db.catalog if packageId provided
       let packageBasePrice: number | undefined;
@@ -249,18 +272,19 @@ export function createFareService(fareVersion: string, db?: Repositories) {
       }
 
       const ruleOverrides: FareRuleOverrides = {
-        vehicles: Array.isArray(cfg.vehicles) ? (cfg.vehicles as FareVehicleOverride[]) : undefined,
-        minKmPerDay: typeof outstationCfg.minKmPerDay === "number" ? outstationCfg.minKmPerDay : undefined,
-        sameDayRoundMultiplier:
-          typeof outstationCfg.sameDayRoundMultiplier === "number"
+        vehicles: dbVehicles ?? (Array.isArray(cfg.vehicles) ? (cfg.vehicles as FareVehicleOverride[]) : undefined),
+        minKmPerDay: dbMinKmPerDay
+          ?? (typeof outstationCfg.minKmPerDay === "number" ? outstationCfg.minKmPerDay : undefined),
+        sameDayRoundMultiplier: dbSameDayRoundMultiplier
+          ?? (typeof outstationCfg.sameDayRoundMultiplier === "number"
             ? outstationCfg.sameDayRoundMultiplier
-            : undefined,
-        nightAllowanceCab:
-          typeof outstationCfg.nightAllowanceCab === "number" ? outstationCfg.nightAllowanceCab : undefined,
-        nightAllowanceTempo:
-          typeof outstationCfg.nightAllowanceTempo === "number" ? outstationCfg.nightAllowanceTempo : undefined,
-        driverAllowance:
-          typeof outstationCfg.driverAllowance === "number" ? outstationCfg.driverAllowance : undefined,
+            : undefined),
+        nightAllowanceCab: allowanceFor("sedan", "night")
+          ?? (typeof outstationCfg.nightAllowanceCab === "number" ? outstationCfg.nightAllowanceCab : undefined),
+        nightAllowanceTempo: allowanceFor("tempo-traveller", "night")
+          ?? (typeof outstationCfg.nightAllowanceTempo === "number" ? outstationCfg.nightAllowanceTempo : undefined),
+        driverAllowance: allowanceFor(input.vehicleTier, "driver")
+          ?? (typeof outstationCfg.driverAllowance === "number" ? outstationCfg.driverAllowance : undefined),
         packageBasePrice: dossierPackageBasePrice ?? packageBasePrice,
         packageName: dossierPackageName ?? packageName,
         packageDuration: dossierPackageDuration ?? packageDuration,

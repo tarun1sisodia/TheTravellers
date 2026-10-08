@@ -7,6 +7,9 @@ export type FareVehicleOverride = {
   name?: string;
   seats?: number;
   bags?: number;
+  // Slice 1: per-tier commercial values from fleet_fare_rules (DB authority)
+  driverAllowance?: number;
+  nightAllowance?: number;
 };
 
 export type FareRuleOverrides = {

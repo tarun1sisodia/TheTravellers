@@ -157,6 +157,27 @@ mkcard('8 · Audit logs — GET /api/v1/ops/admin/audit-logs', [
   {name:'page',label:'page',value:'1'},
 ], 'List', b => api('GET','/api/v1/ops/admin/audit-logs?'+new URLSearchParams(numify(b,['page']))), null);
 
+// 9. Fleets (Slice 1)
+mkcard('9 · Fleets — GET /api/v1/ops/admin/fleets', [], 'List fleets', () => api('GET','/api/v1/ops/admin/fleets'),
+json => { const rows=(json.data&&(json.data.items||json.data))||[]; if(!Array.isArray(rows)) return '';
+  return '<table class="data"><tr><th>code</th><th>name</th><th>seats</th><th>active</th></tr>'+rows.map(r=>'<tr><td>'+r.code+'</td><td>'+r.name+'</td><td>'+r.seats+'</td><td>'+!!r.isActive+'</td></tr>').join('')+'</table>'; });
+mkcard('9b · Update fleet — PUT /api/v1/ops/admin/fleets/:code', [
+  {name:'code',label:'code',value:'sedan'},
+  {name:'patch',label:'PATCH JSON',type:'textarea',value:'{"seats":4}'},
+], 'Update', b => { let p; try{ p=JSON.parse(b.patch); }catch(e){ throw new Error('bad JSON'); } return api('PUT','/api/v1/ops/admin/fleets/'+encodeURIComponent(b.code), p); }, null);
+mkcard('9c · Version fleet rules — GET /api/v1/ops/admin/fare-rules/:version/fleets', [
+  {name:'version',label:'version',value:'v1'},
+], 'Show', b => api('GET','/api/v1/ops/admin/fare-rules/'+encodeURIComponent(b.version)+'/fleets'),
+json => { const d=json.data||{}; const rows=d.fleetRules||[]; if(!rows.length) return '';
+  return '<div class="meta">version <b>'+d.version+'</b> active='+!!d.isActive+'</div><table class="data"><tr><th>fleet</th><th>perKm</th><th>driver</th><th>night</th></tr>'+rows.map(r=>'<tr><td>'+r.fleetCode+'</td><td>₹'+r.perKm+'</td><td>₹'+r.driverAllowance+'</td><td>₹'+r.nightAllowance+'</td></tr>').join('')+'</table>'; });
+mkcard('9d · Upsert version fleet rule — PUT /api/v1/ops/admin/fare-rules/:version/fleets/:fleetCode', [
+  {name:'version',label:'version',value:'v1'},
+  {name:'fleetCode',label:'fleetCode',value:'sedan'},
+  {name:'perKm',label:'perKm',value:'10'},
+  {name:'driverAllowance',label:'driverAllowance',value:'300'},
+  {name:'nightAllowance',label:'nightAllowance',value:'300'},
+], 'Upsert', b => api('PUT','/api/v1/ops/admin/fare-rules/'+encodeURIComponent(b.version)+'/fleets/'+encodeURIComponent(b.fleetCode), numify(b,['perKm','driverAllowance','nightAllowance'])), null);
+
 renderToken();
 </script>
 </body>

@@ -61,6 +61,8 @@ import type {
   CatalogListFilter,
   DeviceRegistrationRecord,
   FareRuleRecord,
+  FleetRecord,
+  FleetFareRuleRecord,
   Repositories,
   ReviewListFilter,
   RentalEnquiryListFilter,
@@ -98,6 +100,8 @@ export function createMemoryRepositories(nowIso = new Date().toISOString()): Rep
   const locationCache = new Map<string, { suggestions: LocationSuggestion[]; storedAt: string }>();
   const devices = new Map<string, DeviceRegistrationRecord>();
   const fareRules = new Map<string, FareRuleRecord>();
+  const fleets = new Map<string, FleetRecord>();
+  const fleetFareRules = new Map<string, FleetFareRuleRecord>();
   const locks = new Map<string, Promise<void>>();
 
   const tourPackages = new Map<string, TourPackageRecord>();
@@ -998,6 +1002,55 @@ export function createMemoryRepositories(nowIso = new Date().toISOString()): Rep
         target.effectiveFrom = now;
         target.effectiveTo = null;
         return clone(target);
+      },
+    },
+
+    fleets: {
+      async list() {
+        return [...fleets.values()]
+          .sort((a, b) => a.sortOrder - b.sortOrder || a.code.localeCompare(b.code))
+          .map(clone);
+      },
+      async get(code: string) {
+        const f = fleets.get(code);
+        return f ? clone(f) : null;
+      },
+      async update(code: string, patch: Partial<FleetRecord>) {
+        const f = fleets.get(code);
+        if (!f) return null;
+        const updated = { ...clone(f), ...clone(patch), code, updatedAt: new Date().toISOString() };
+        fleets.set(code, updated);
+        return clone(updated);
+      },
+    },
+
+    fleetFareRules: {
+      async listByFareRuleId(fareRuleId: string) {
+        return [...fleetFareRules.values()]
+          .filter((r) => r.fareRuleId === fareRuleId)
+          .sort((a, b) => a.fleetCode.localeCompare(b.fleetCode))
+          .map(clone);
+      },
+      async upsert(fareRuleId: string, fleetCode: string, values: { perKm: number; driverAllowance: number; nightAllowance: number }) {
+        const now = new Date().toISOString();
+        let existing: FleetFareRuleRecord | undefined;
+        for (const r of fleetFareRules.values()) {
+          if (r.fareRuleId === fareRuleId && r.fleetCode === fleetCode) { existing = r; break; }
+        }
+        if (existing) {
+          existing.perKm = values.perKm;
+          existing.driverAllowance = values.driverAllowance;
+          existing.nightAllowance = values.nightAllowance;
+          existing.updatedAt = now;
+          return clone(existing);
+        }
+        const rec: FleetFareRuleRecord = {
+          id: crypto.randomUUID(), fareRuleId, fleetCode,
+          perKm: values.perKm, driverAllowance: values.driverAllowance, nightAllowance: values.nightAllowance,
+          createdAt: now, updatedAt: now,
+        };
+        fleetFareRules.set(rec.id, rec);
+        return clone(rec);
       },
     },
   };
