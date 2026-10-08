@@ -18,6 +18,8 @@ export interface PricingStrategyContext {
   minKmPerDay?: number;
   sameDayRoundMultiplier?: number;
   driverAllowance?: number;
+  routeFixedFareInr?: number;
+  routeSlug?: string;
 }
 
 export interface PricingCalculationResult {
@@ -65,11 +67,12 @@ export class StandardVehiclePricingStrategy implements PricingStrategy {
       const standardRound = roundRupees(baseOneWayFare * sameDayRoundMultiplier);
       const dailyDriverAllowance = ctx.driverAllowance !== undefined ? ctx.driverAllowance * days : 300 * days;
 
+      if (ctx.routeFixedFareInr !== undefined) rules.push(`route:fixed-fare:${ctx.routeSlug ?? "corridor"}`);
       if (days > 1) {
         rules.push(`outstation-${minKmPerDay}km-per-day`, `days:${days}`);
         return {
           effectiveTripType: "round-trip",
-          baseFare: Math.max(minDayKmTotal, actualRound),
+          baseFare: ctx.routeFixedFareInr ?? Math.max(minDayKmTotal, actualRound),
           driverAllowance: dailyDriverAllowance,
           distanceKm: billedDistance,
           billedKm: billedDistance,
@@ -82,7 +85,7 @@ export class StandardVehiclePricingStrategy implements PricingStrategy {
         rules.push(`same-day-round-${sameDayRoundMultiplier}x`, `outstation-${minKmPerDay}km-per-day`);
         return {
           effectiveTripType: "round-trip",
-          baseFare: Math.max(standardRound, minDayKmTotal),
+          baseFare: ctx.routeFixedFareInr ?? Math.max(standardRound, minDayKmTotal),
           driverAllowance: 0,
           distanceKm: billedDistance,
           billedKm: billedDistance,
@@ -95,9 +98,10 @@ export class StandardVehiclePricingStrategy implements PricingStrategy {
     }
 
     // Default: Standard point-to-point / one-way
+    if (ctx.routeFixedFareInr !== undefined) rules.push(`route:fixed-fare:${ctx.routeSlug ?? "corridor"}`);
     return {
       effectiveTripType: input.tripType,
-      baseFare: baseOneWayFare,
+      baseFare: ctx.routeFixedFareInr ?? baseOneWayFare,
       driverAllowance: 0,
       distanceKm: billedDistance,
       billedKm: billedDistance,
@@ -138,8 +142,9 @@ export class GroupCommercialVehicleStrategy implements PricingStrategy {
     // once at the selected Tempo Traveller / Urbania per-km rate.
     const billedKm = input.distanceKm < 300 ? input.distanceKm * 2 : input.distanceKm;
 
-    // Rule 3: Fixed-rate pricing structure (billed km * perKm rate)
-    const baseFare = roundRupees(billedKm * ctx.spec.perKm);
+    // Rule 3: Fixed-rate pricing structure (billed km * perKm rate),
+    // unless a published route sets a fixed fare for this fleet.
+    const baseFare = ctx.routeFixedFareInr ?? roundRupees(billedKm * ctx.spec.perKm);
 
     // Rule 4: Driver Allowance — strictly ₹500/day unless configured
     const driverAllowance = (ctx.driverAllowance !== undefined ? ctx.driverAllowance : 500) * days;
@@ -152,7 +157,7 @@ export class GroupCommercialVehicleStrategy implements PricingStrategy {
       `days:${days}`,
       `billable-km:${billedKm}`,
       `driver-allowance:${driverAllowance}`,
-      "locked-fixed-rate-pricing",
+      ctx.routeFixedFareInr !== undefined ? `route:fixed-fare:${ctx.routeSlug ?? "corridor"}` : "locked-fixed-rate-pricing",
     ];
 
     return {

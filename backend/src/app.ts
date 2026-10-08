@@ -33,6 +33,8 @@ import { createFareController } from "./modules/fares/fare.controller.js";
 import { registerFareRoutes } from "./modules/fares/fare.routes.js";
 import { createFareService } from "./modules/fares/fare.service.js";
 import { registerFleetRoutes } from "./modules/fleet/fleet.routes.js";
+import { registerRouteRoutes } from "./modules/routes/route.routes.js";
+import { registerRoutePages } from "./modules/routes/route.pages.js";
 import { createNotificationService } from "./modules/notifications/notification.service.js";
 import { createPaymentController } from "./modules/payments/payment.controller.js";
 import { registerPaymentRoutes } from "./modules/payments/payment.routes.js";
@@ -201,6 +203,8 @@ export async function buildApp(options: AppOptions): Promise<BuiltApp> {
 
   await registerFareRoutes(app, createFareController(fareService));
   registerFleetRoutes(app, { db });
+  registerRouteRoutes(app, { db });
+  registerRoutePages(app, { db });
   await registerBookingRoutes(app, createBookingController(bookingService, env.CUSTOMER_AUTH_REQUIRED_FOR_NEW_BOOKINGS));
   const bookingIntentService = createBookingIntentService({ db, clock, fareService, bookingService });
   await registerBookingIntentRoutes(app, createBookingIntentController(bookingIntentService));

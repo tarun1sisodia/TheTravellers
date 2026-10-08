@@ -16,7 +16,7 @@ import type {
   ReviewRecord,
   WebhookEventRecord,
 } from "../types/domain.js";
-import type { DeviceRegistrationRecord, FareRuleRecord, FleetRecord, FleetFareRuleRecord, InquiryListFilter, RentalEnquiryListFilter, PaymentListFilter, Repositories } from "./types.js";
+import type { DeviceRegistrationRecord, FareRuleRecord, FleetRecord, FleetFareRuleRecord, InquiryListFilter, RentalEnquiryListFilter, PaymentListFilter, Repositories, RouteListFilter, RouteRecord, RouteFleetFareRecord, RouteChargeRecord, SlugRedirectRecord } from "./types.js";
 import type { RouteCatalogRecord } from "./route-catalog-types.js";
 import type {
   CancellationPolicyRecord,
@@ -1632,6 +1632,145 @@ export async function createPostgresRepositories(databaseUrl: string): Promise<R
             return mapFleetFareRule(rows[0]);
           },
         },
+
+        routes: {
+          async list(filter: RouteListFilter = {}) {
+            const conds: string[] = [];
+            const params: unknown[] = [];
+            if (filter.status) { params.push(filter.status); conds.push(`status=$${params.length}`); }
+            if (filter.featured !== undefined) { params.push(filter.featured); conds.push(`is_featured=$${params.length}`); }
+            if (filter.q) { params.push(`%${filter.q}%`); conds.push(`(origin_city ilike $${params.length} or destination_city ilike $${params.length} or slug ilike $${params.length})`); }
+            const where = conds.length ? `where ${conds.join(" and ")}` : "";
+            const rows = await query(
+              client,
+              `select * from routes ${where} order by is_featured desc, featured_order nulls last, updated_at desc`,
+              params,
+            );
+            return rows.map(mapRoute);
+          },
+          async get(id: string) {
+            if (!isUuid(id)) return null;
+            const rows = await query(client, "select * from routes where id=$1 limit 1", [id]);
+            return rows[0] ? mapRoute(rows[0]) : null;
+          },
+          async getBySlug(slug: string) {
+            const rows = await query(client, "select * from routes where slug=$1 limit 1", [slug]);
+            return rows[0] ? mapRoute(rows[0]) : null;
+          },
+          async getByCorridor(corridor: string, tripType: string) {
+            const rows = await query(
+              client,
+              "select * from routes where corridor=$1 and trip_type=$2 and status='published' limit 1",
+              [corridor, tripType],
+            );
+            return rows[0] ? mapRoute(rows[0]) : null;
+          },
+          async create(record: RouteRecord) {
+            await query(
+              client,
+              `insert into routes (id, slug, origin_city, destination_city, corridor, trip_type,
+                                   distance_km, duration_text, status, is_featured, featured_order,
+                                   published_at, new_until, meta_title, meta_description,
+                                   hero_image_url, gallery, created_at, updated_at)
+               values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb,$18,$19)`,
+              [record.id, record.slug, record.originCity, record.destinationCity, record.corridor,
+               record.tripType, record.distanceKm ?? null, record.durationText ?? null, record.status,
+               record.isFeatured, record.featuredOrder ?? null, record.publishedAt ?? null,
+               record.newUntil ?? null, record.metaTitle ?? null, record.metaDescription ?? null,
+               record.heroImageUrl ?? null, JSON.stringify(record.gallery ?? []),
+               record.createdAt, record.updatedAt],
+            );
+            return record;
+          },
+          async update(id: string, patch: Partial<RouteRecord>) {
+            if (!isUuid(id)) return null;
+            // Dynamic SET: only provided keys are written. null clears a column,
+            // undefined leaves it untouched — same semantics as the memory repo.
+            const colMap: Record<string, string> = {
+              slug: "slug", originCity: "origin_city", destinationCity: "destination_city",
+              corridor: "corridor", tripType: "trip_type", distanceKm: "distance_km",
+              durationText: "duration_text", status: "status", isFeatured: "is_featured",
+              featuredOrder: "featured_order", publishedAt: "published_at", newUntil: "new_until",
+              metaTitle: "meta_title", metaDescription: "meta_description",
+              heroImageUrl: "hero_image_url", gallery: "gallery",
+            };
+            const sets: string[] = [];
+            const params: unknown[] = [id];
+            for (const [key, col] of Object.entries(colMap)) {
+              const v = (patch as Record<string, unknown>)[key];
+              if (v === undefined) continue;
+              params.push(key === "gallery" ? JSON.stringify(v) : v);
+              sets.push(`${col}=$${params.length}${key === "gallery" ? "::jsonb" : ""}`);
+            }
+            if (!sets.length) {
+              const rows = await query(client, "select * from routes where id=$1 limit 1", [id]);
+              return rows[0] ? mapRoute(rows[0]) : null;
+            }
+            sets.push("updated_at=now()");
+            const rows = await query(
+              client,
+              `update routes set ${sets.join(", ")} where id=$1 returning *`,
+              params,
+            );
+            return rows[0] ? mapRoute(rows[0]) : null;
+          },
+          async listFleetFares(routeId: string) {
+            const rows = await query(
+              client, "select * from route_fleet_fares where route_id=$1 order by fleet_code asc", [routeId]);
+            return rows.map(mapRouteFleetFare);
+          },
+          async upsertFleetFare(routeId: string, fleetCode: string, values: { oneWayFareInr?: number | null; roundTripFareInr?: number | null }) {
+            const rows = await query(
+              client,
+              `insert into route_fleet_fares (route_id, fleet_code, one_way_fare_inr, round_trip_fare_inr)
+               values ($1,$2,$3,$4)
+               on conflict (route_id, fleet_code) do update set
+                 one_way_fare_inr=excluded.one_way_fare_inr,
+                 round_trip_fare_inr=excluded.round_trip_fare_inr,
+                 updated_at=now()
+               returning *`,
+              [routeId, fleetCode, values.oneWayFareInr ?? null, values.roundTripFareInr ?? null],
+            );
+            if (!rows[0]) throw new Error("route_fleet_fares upsert returned no row");
+            return mapRouteFleetFare(rows[0]);
+          },
+          async listCharges(routeId: string) {
+            const rows = await query(
+              client, "select * from route_charges where route_id=$1 order by created_at asc", [routeId]);
+            return rows.map(mapRouteCharge);
+          },
+          async addCharge(routeId: string, charge: { kind: RouteChargeRecord["kind"]; amountInr: number; appliesTo?: string; note?: string | null }) {
+            const id = crypto.randomUUID();
+            const rows = await query(
+              client,
+              `insert into route_charges (id, route_id, kind, amount_inr, applies_to, note)
+               values ($1,$2,$3,$4,$5,$6) returning *`,
+              [id, routeId, charge.kind, charge.amountInr, charge.appliesTo ?? "all", charge.note ?? null],
+            );
+            if (!rows[0]) throw new Error("route_charges insert returned no row");
+            return mapRouteCharge(rows[0]);
+          },
+          async deleteCharge(id: string) {
+            if (!isUuid(id)) return false;
+            const rows = await query(client, "delete from route_charges where id=$1 returning id", [id]);
+            return rows.length > 0;
+          },
+        },
+
+        slugRedirects: {
+          async get(oldSlug: string) {
+            const rows = await query(client, "select * from slug_redirects where old_slug=$1 limit 1", [oldSlug]);
+            return rows[0] ? mapSlugRedirect(rows[0]) : null;
+          },
+          async put(oldSlug: string, entityType: SlugRedirectRecord["entityType"], newSlug: string) {
+            await query(
+              client,
+              `insert into slug_redirects (old_slug, entity_type, new_slug)
+               values ($1,$2,$3) on conflict (old_slug) do update set new_slug=excluded.new_slug`,
+              [oldSlug, entityType, newSlug],
+            );
+          },
+        },
     };
   }
 
@@ -1681,6 +1820,63 @@ function mapFleetFareRule(row: Record<string, unknown>): FleetFareRuleRecord {
     nightAllowance: Number(row.night_allowance),
     createdAt: new Date(String(row.created_at)).toISOString(),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
+  };
+}
+
+function mapSlugRedirect(row: Record<string, unknown>): SlugRedirectRecord {
+  return {
+    oldSlug: String(row.old_slug),
+    entityType: row.entity_type as SlugRedirectRecord["entityType"],
+    newSlug: String(row.new_slug),
+    createdAt: new Date(String(row.created_at)).toISOString(),
+  };
+}
+
+function mapRoute(row: Record<string, unknown>): RouteRecord {
+  return {
+    id: String(row.id),
+    slug: String(row.slug),
+    originCity: String(row.origin_city),
+    destinationCity: String(row.destination_city),
+    corridor: String(row.corridor),
+    tripType: row.trip_type as RouteRecord["tripType"],
+    distanceKm: row.distance_km !== null && row.distance_km !== undefined ? Number(row.distance_km) : null,
+    durationText: row.duration_text ? String(row.duration_text) : null,
+    status: row.status as RouteRecord["status"],
+    isFeatured: Boolean(row.is_featured),
+    featuredOrder: row.featured_order !== null && row.featured_order !== undefined ? Number(row.featured_order) : null,
+    publishedAt: row.published_at ? new Date(String(row.published_at)).toISOString() : null,
+    newUntil: row.new_until ? new Date(String(row.new_until)).toISOString() : null,
+    metaTitle: row.meta_title ? String(row.meta_title) : null,
+    metaDescription: row.meta_description ? String(row.meta_description) : null,
+    heroImageUrl: row.hero_image_url ? String(row.hero_image_url) : null,
+    gallery: Array.isArray(row.gallery) ? (row.gallery as string[]) : [],
+    createdAt: new Date(String(row.created_at)).toISOString(),
+    updatedAt: new Date(String(row.updated_at)).toISOString(),
+  };
+}
+
+function mapRouteFleetFare(row: Record<string, unknown>): RouteFleetFareRecord {
+  return {
+    id: String(row.id),
+    routeId: String(row.route_id),
+    fleetCode: String(row.fleet_code),
+    oneWayFareInr: row.one_way_fare_inr !== null && row.one_way_fare_inr !== undefined ? Number(row.one_way_fare_inr) : null,
+    roundTripFareInr: row.round_trip_fare_inr !== null && row.round_trip_fare_inr !== undefined ? Number(row.round_trip_fare_inr) : null,
+    createdAt: new Date(String(row.created_at)).toISOString(),
+    updatedAt: new Date(String(row.updated_at)).toISOString(),
+  };
+}
+
+function mapRouteCharge(row: Record<string, unknown>): RouteChargeRecord {
+  return {
+    id: String(row.id),
+    routeId: String(row.route_id),
+    kind: row.kind as RouteChargeRecord["kind"],
+    amountInr: Number(row.amount_inr),
+    appliesTo: String(row.applies_to ?? "all"),
+    note: row.note ? String(row.note) : null,
+    createdAt: new Date(String(row.created_at)).toISOString(),
   };
 }
 

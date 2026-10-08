@@ -77,7 +77,7 @@ describe("Slice 1 — DB-driven outstation matrix (doc §76)", () => {
 
   it("boundary: exactly 300 km is NOT doubled for group vehicles", async () => {
     const { fareService } = await seededService();
-    for (const code of ["tempo-traveller", "urbania"]) {
+    for (const code of ["tempo-traveller", "urbania"] as const) {
       const q = await fareService.calculate({
         tripType: "one-way",
         vehicleTier: code,

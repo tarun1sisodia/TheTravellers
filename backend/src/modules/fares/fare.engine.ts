@@ -559,6 +559,8 @@ export function calculateFare(input: FareEngineInput): FareEngineResult {
     minKmPerDay: input.ruleOverrides?.minKmPerDay,
     sameDayRoundMultiplier: input.ruleOverrides?.sameDayRoundMultiplier,
     driverAllowance: input.ruleOverrides?.driverAllowance,
+    routeFixedFareInr: input.ruleOverrides?.routeFixedFareInr,
+    routeSlug: input.ruleOverrides?.routeSlug,
   });
 
   return finalize({

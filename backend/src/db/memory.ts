@@ -5,6 +5,7 @@ import {
   SEED_CATALOG_MEDIA,
   SEED_DEVICES,
   SEED_FARE_RULES,
+  SEED_FLEETS,
   SEED_INQUIRIES,
   SEED_LOCATION_CACHE,
   SEED_NOTIFICATION_JOBS,
@@ -64,6 +65,11 @@ import type {
   FleetRecord,
   FleetFareRuleRecord,
   Repositories,
+  RouteListFilter,
+  RouteRecord,
+  RouteFleetFareRecord,
+  RouteChargeRecord,
+  SlugRedirectRecord,
   ReviewListFilter,
   RentalEnquiryListFilter,
 } from "./types.js";
@@ -102,6 +108,10 @@ export function createMemoryRepositories(nowIso = new Date().toISOString()): Rep
   const fareRules = new Map<string, FareRuleRecord>();
   const fleets = new Map<string, FleetRecord>();
   const fleetFareRules = new Map<string, FleetFareRuleRecord>();
+  const routes = new Map<string, RouteRecord>();
+  const routeFleetFares = new Map<string, RouteFleetFareRecord>();
+  const routeCharges = new Map<string, RouteChargeRecord>();
+  const slugRedirects = new Map<string, SlugRedirectRecord>();
   const locks = new Map<string, Promise<void>>();
 
   const tourPackages = new Map<string, TourPackageRecord>();
@@ -140,6 +150,9 @@ export function createMemoryRepositories(nowIso = new Date().toISOString()): Rep
     }
     for (const fr of SEED_FARE_RULES) {
       fareRules.set(fr.id, clone(fr));
+    }
+    for (const fl of SEED_FLEETS) {
+      fleets.set(fl.code, clone(fl));
     }
     for (const pm of SEED_PROMO_CODES) {
       promos.set(pm.id, clone(pm));
@@ -1051,6 +1064,105 @@ export function createMemoryRepositories(nowIso = new Date().toISOString()): Rep
         };
         fleetFareRules.set(rec.id, rec);
         return clone(rec);
+      },
+    },
+
+    routes: {
+      async list(filter: RouteListFilter = {}) {
+        let rows = [...routes.values()];
+        if (filter.status) rows = rows.filter((r) => r.status === filter.status);
+        if (filter.featured !== undefined) rows = rows.filter((r) => r.isFeatured === filter.featured);
+        if (filter.q) {
+          const q = filter.q.toLowerCase();
+          rows = rows.filter((r) => [r.originCity, r.destinationCity, r.slug].some((v) => v.toLowerCase().includes(q)));
+        }
+        return rows
+          .sort((a, b) => Number(b.isFeatured) - Number(a.isFeatured) || b.updatedAt.localeCompare(a.updatedAt))
+          .map(clone);
+      },
+      async get(id: string) {
+        const r = routes.get(id);
+        return r ? clone(r) : null;
+      },
+      async getBySlug(slug: string) {
+        for (const r of routes.values()) if (r.slug === slug) return clone(r);
+        return null;
+      },
+      async getByCorridor(corridor: string, tripType: string) {
+        for (const r of routes.values()) {
+          if (r.corridor === corridor && r.tripType === tripType && r.status === "published") return clone(r);
+        }
+        return null;
+      },
+      async create(record: RouteRecord) {
+        for (const r of routes.values()) {
+          if (r.slug === record.slug) throw new Error("duplicate slug");
+          if (r.corridor === record.corridor && r.tripType === record.tripType) throw new Error("duplicate corridor");
+        }
+        routes.set(record.id, clone(record));
+        return clone(record);
+      },
+      async update(id: string, patch: Partial<RouteRecord>) {
+        const r = routes.get(id);
+        if (!r) return null;
+        const updated = { ...clone(r), ...clone(patch), id, updatedAt: new Date().toISOString() };
+        routes.set(id, updated);
+        return clone(updated);
+      },
+      async listFleetFares(routeId: string) {
+        return [...routeFleetFares.values()]
+          .filter((r) => r.routeId === routeId)
+          .sort((a, b) => a.fleetCode.localeCompare(b.fleetCode))
+          .map(clone);
+      },
+      async upsertFleetFare(routeId: string, fleetCode: string, values: { oneWayFareInr?: number | null; roundTripFareInr?: number | null }) {
+        const now = new Date().toISOString();
+        for (const r of routeFleetFares.values()) {
+          if (r.routeId === routeId && r.fleetCode === fleetCode) {
+            r.oneWayFareInr = values.oneWayFareInr ?? null;
+            r.roundTripFareInr = values.roundTripFareInr ?? null;
+            r.updatedAt = now;
+            return clone(r);
+          }
+        }
+        const rec: RouteFleetFareRecord = {
+          id: crypto.randomUUID(), routeId, fleetCode,
+          oneWayFareInr: values.oneWayFareInr ?? null,
+          roundTripFareInr: values.roundTripFareInr ?? null,
+          createdAt: now, updatedAt: now,
+        };
+        routeFleetFares.set(rec.id, rec);
+        return clone(rec);
+      },
+      async listCharges(routeId: string) {
+        return [...routeCharges.values()]
+          .filter((c) => c.routeId === routeId)
+          .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+          .map(clone);
+      },
+      async addCharge(routeId: string, charge: { kind: RouteChargeRecord["kind"]; amountInr: number; appliesTo?: string; note?: string | null }) {
+        const now = new Date().toISOString();
+        const rec: RouteChargeRecord = {
+          id: crypto.randomUUID(), routeId, kind: charge.kind, amountInr: charge.amountInr,
+          appliesTo: charge.appliesTo ?? "all", note: charge.note ?? null, createdAt: now,
+        };
+        routeCharges.set(rec.id, rec);
+        return clone(rec);
+      },
+      async deleteCharge(id: string) {
+        return routeCharges.delete(id);
+      },
+    },
+
+    slugRedirects: {
+      async get(oldSlug: string) {
+        const r = slugRedirects.get(oldSlug);
+        return r ? clone(r) : null;
+      },
+      async put(oldSlug: string, entityType: SlugRedirectRecord["entityType"], newSlug: string) {
+        slugRedirects.set(oldSlug, {
+          oldSlug, entityType, newSlug, createdAt: new Date().toISOString(),
+        });
       },
     },
   };

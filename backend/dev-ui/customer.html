@@ -92,6 +92,7 @@ mkcard('1 · Fare quote — POST /api/v1/fares/calculate', [
   {name:'destinationName',label:'destination',value:'Delhi'},
   {name:'distanceKm',label:'distanceKm',value:'230'},
   {name:'pickupDatetime',label:'pickupDatetime',value:isoPlus(17)},
+  {name:'routeSlug',label:'routeSlug (optional, fixed fares)',ph:'agra-to-delhi-one-way'},
   {name:'promoCode',label:'promoCode (optional)',ph:'ASTTCAR500OFF'},
 ], 'Calculate', b => api('POST','/api/v1/fares/calculate', numify(b,['distanceKm'])),
 json => { const d=json.data||{}; return '<div class="meta">total <b>₹'+d.totalFare+'</b> = base ₹'+d.baseFare+' + night ₹'+d.nightAllowance+' + driver ₹'+d.driverAllowance+' − discount ₹'+d.discountAmount+' · advance ₹'+d.advanceAmount+' · billedKm '+d.billedKm+' · rules: '+(d.rules||[]).join(', ')+'</div>'; });

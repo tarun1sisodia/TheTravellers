@@ -21,7 +21,7 @@ import type {
   ReviewRecord,
   WebhookEventRecord,
 } from "../types/domain.js";
-import type { DeviceRegistrationRecord, FareRuleRecord } from "./types.js";
+import type { DeviceRegistrationRecord, FareRuleRecord, FleetRecord } from "./types.js";
 
 const BASE_TIME = "2026-09-17T08:00:00.000Z";
 
@@ -92,6 +92,16 @@ export const SEED_FARE_RULES: FareRuleRecord[] = [
     isActive: true,
     createdAt: "2026-09-01T00:00:00.000Z",
   },
+];
+
+// ── Fleet Master (Slice 1 — canonical sellable fleets) ───────────────────────
+
+export const SEED_FLEETS: FleetRecord[] = [
+  { code: "sedan", name: "Sedan", seats: 4, luggageCapacity: 2, imageUrl: null, description: null, sortOrder: 1, isActive: true, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z" },
+  { code: "ertiga", name: "Ertiga", seats: 6, luggageCapacity: 3, imageUrl: null, description: null, sortOrder: 2, isActive: true, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z" },
+  { code: "innova-crysta", name: "Innova Crysta", seats: 6, luggageCapacity: 4, imageUrl: null, description: null, sortOrder: 3, isActive: true, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z" },
+  { code: "tempo-traveller", name: "Tempo Traveller", seats: 12, luggageCapacity: 8, imageUrl: null, description: null, sortOrder: 4, isActive: true, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z" },
+  { code: "urbania", name: "Force Urbania", seats: 16, luggageCapacity: 10, imageUrl: null, description: null, sortOrder: 5, isActive: true, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z" },
 ];
 
 // ── Promo Codes ──────────────────────────────────────────────────────────────

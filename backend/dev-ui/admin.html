@@ -178,6 +178,40 @@ mkcard('9d · Upsert version fleet rule — PUT /api/v1/ops/admin/fare-rules/:ve
   {name:'nightAllowance',label:'nightAllowance',value:'300'},
 ], 'Upsert', b => api('PUT','/api/v1/ops/admin/fare-rules/'+encodeURIComponent(b.version)+'/fleets/'+encodeURIComponent(b.fleetCode), numify(b,['perKm','driverAllowance','nightAllowance'])), null);
 
+// 10. Routes (Slice 2)
+mkcard('10 · Routes — GET /api/v1/ops/admin/routes', [
+  {name:'status',label:'status',type:'select',options:['','draft','published','archived'],value:''},
+  {name:'q',label:'search',ph:'agra'},
+], 'List', b => { const p={}; if(b.status)p.status=b.status; if(b.q)p.q=b.q; return api('GET','/api/v1/ops/admin/routes?'+new URLSearchParams(p)); },
+json => { const rows=(json.data&&json.data.items)||[]; if(!rows.length) return '';
+  return '<table class="data"><tr><th>id</th><th>slug</th><th>status</th><th>featured</th></tr>'+rows.map(r=>'<tr><td>'+r.id.slice(0,8)+'</td><td><a href="/routes/'+r.slug+'" target="_blank">'+r.slug+'</a></td><td>'+r.status+'</td><td>'+!!r.isFeatured+'</td></tr>').join('')+'</table>'; });
+mkcard('10b · Create route — POST /api/v1/ops/admin/routes', [
+  {name:'originCity',label:'originCity',value:'Agra'},
+  {name:'destinationCity',label:'destinationCity',value:'Mathura'},
+  {name:'tripType',label:'tripType',type:'select',options:['one-way','round-trip'],value:'one-way'},
+  {name:'distanceKm',label:'distanceKm',value:'60'},
+], 'Create (draft)', b => api('POST','/api/v1/ops/admin/routes', numify(b,['distanceKm'])),
+json => '<div class="meta">id <b>'+((json.data||{}).id)+'</b> slug <b>'+((json.data||{}).slug)+'</b></div>');
+mkcard('10c · Publish / archive route', [
+  {name:'id',label:'route id'},
+], 'Publish', b => api('POST','/api/v1/ops/admin/routes/'+encodeURIComponent(b.id)+'/publish'), null,
+[['Archive', b => api('POST','/api/v1/ops/admin/routes/'+encodeURIComponent(b.id)+'/archive')]]);
+mkcard('10d · Update route — PATCH /api/v1/ops/admin/routes/:id', [
+  {name:'id',label:'route id'},
+  {name:'patch',label:'PATCH JSON',type:'textarea',value:'{"isFeatured":true,"featuredOrder":1}'},
+], 'Update', b => { let p; try{ p=JSON.parse(b.patch); }catch(e){ throw new Error('bad JSON'); } return api('PATCH','/api/v1/ops/admin/routes/'+encodeURIComponent(b.id), p); }, null);
+mkcard('10e · Route fleet fare — PUT /api/v1/ops/admin/routes/:id/fleets/:code', [
+  {name:'id',label:'route id'},
+  {name:'code',label:'fleet code',value:'sedan'},
+  {name:'oneWayFareInr',label:'oneWayFareInr',value:'3499'},
+  {name:'roundTripFareInr',label:'roundTripFareInr',value:'5999'},
+], 'Upsert fare', b => { const id=b.id; return api('PUT','/api/v1/ops/admin/routes/'+encodeURIComponent(id)+'/fleets/'+encodeURIComponent(b.code), numify({oneWayFareInr:b.oneWayFareInr,roundTripFareInr:b.roundTripFareInr},['oneWayFareInr','roundTripFareInr'])); }, null);
+mkcard('10f · Public routes — GET /api/v1/routes', [
+  {name:'featured',label:'featured only',type:'select',options:['','true'],value:''},
+], 'Load', b => api('GET','/api/v1/routes'+(b.featured?'?featured=true':'')),
+json => { const rows=(json.data&&json.data.items)||[]; if(!rows.length) return '';
+  return '<table class="data"><tr><th>slug</th><th>isNew</th><th>status</th></tr>'+rows.map(r=>'<tr><td><a href="/routes/'+r.slug+'" target="_blank">'+r.slug+'</a></td><td>'+!!r.isNew+'</td><td>'+r.status+'</td></tr>').join('')+'</table>'; });
+
 renderToken();
 </script>
 </body>

@@ -7,7 +7,7 @@ import type {
   FareRuleOverrides,
   FareVehicleOverride,
 } from "./fare.types.js";
-import type { Repositories } from "../../db/types.js";
+import type { Repositories, RouteRecord } from "../../db/types.js";
 import type { RouteCatalogRecord } from "../../db/route-catalog-types.js";
 import { Errors } from "../../shared/errors.js";
 import { resolveTierKey, toCanonicalTierKey } from "../../contracts/vehicle-tiers.js";
@@ -271,6 +271,34 @@ export function createFareService(fareVersion: string, db?: Repositories) {
         }
       }
 
+      // Slice 2: published route fixed fares. An explicit routeSlug wins; otherwise
+      // match the origin/destination corridor (either direction) for the trip type.
+      // A fixed fare for the requested fleet replaces per-km math as the base fare.
+      let routeFixedFareInr: number | undefined;
+      let routeSlug: string | undefined;
+      if (db && (input.tripType === "one-way" || input.tripType === "round-trip")) {
+        let route: RouteRecord | null = null;
+        const explicit = input.routeSlug?.trim();
+        if (explicit) {
+          const found = await db.routes.getBySlug(explicit);
+          route = found && found.status === "published" ? found : null;
+        } else if (input.originName && input.destinationName) {
+          const a = slugifyPlace(input.originName);
+          const b = slugifyPlace(input.destinationName);
+          route = (await db.routes.getByCorridor(`${a}-${b}`, input.tripType))
+            ?? (await db.routes.getByCorridor(`${b}-${a}`, input.tripType));
+        }
+        if (route) {
+          const fares = await db.routes.listFleetFares(route.id);
+          const row = fares.find((f) => f.fleetCode === input.vehicleTier);
+          const fixed = input.tripType === "round-trip" ? row?.roundTripFareInr : row?.oneWayFareInr;
+          if (fixed !== null && fixed !== undefined && fixed > 0) {
+            routeFixedFareInr = fixed;
+            routeSlug = route.slug;
+          }
+        }
+      }
+
       const ruleOverrides: FareRuleOverrides = {
         vehicles: dbVehicles ?? (Array.isArray(cfg.vehicles) ? (cfg.vehicles as FareVehicleOverride[]) : undefined),
         minKmPerDay: dbMinKmPerDay
@@ -305,6 +333,9 @@ export function createFareService(fareVersion: string, db?: Repositories) {
 
         nightStartHour,
         nightEndHour,
+
+        routeFixedFareInr,
+        routeSlug,
 
         ...input.ruleOverrides,
       };

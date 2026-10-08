@@ -37,6 +37,11 @@ export type FareRuleOverrides = {
   // Phase 4 Configurable night window (defaults to 20:00–06:00)
   nightStartHour?: number;
   nightEndHour?: number;
+
+  // Slice 2: fixed per-fleet fare from a published route (route_fleet_fares).
+  // When set, the outstation strategies use it as the base fare instead of per-km math.
+  routeFixedFareInr?: number;
+  routeSlug?: string;
 };
 
 export type FareEngineInput = {
@@ -57,6 +62,7 @@ export type FareEngineInput = {
 
 export type CalculateFareInput = Omit<FareEngineInput, "distanceKm"> & {
   distanceKm?: number;
+  routeSlug?: string;
 };
 
 export type PromoEvaluation = {

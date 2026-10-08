@@ -16,6 +16,8 @@ const CalculateFareBaseSchema = z.object({
   promoCode: z.string().trim().max(30).regex(/^[A-Za-z0-9_-]+$/, "Invalid promo code format").optional(),
   packageId: z.string().trim().max(80).optional(),
   localPackageKey: z.enum(["8hr-80km", "12hr-120km", "airport-transfer"]).optional(),
+  // Slice 2: quote against a published route's fixed fleet fares.
+  routeSlug: z.string().trim().min(1).max(160).regex(/^[a-z0-9-]+$/).optional(),
 }).strict();
 
 export const CalculateFareSchema = CalculateFareBaseSchema

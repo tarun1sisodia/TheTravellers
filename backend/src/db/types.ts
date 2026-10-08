@@ -287,6 +287,25 @@ export type Repositories = {
     listByFareRuleId(fareRuleId: string): Promise<FleetFareRuleRecord[]>;
     upsert(fareRuleId: string, fleetCode: string, values: { perKm: number; driverAllowance: number; nightAllowance: number }): Promise<FleetFareRuleRecord>;
   };
+
+  routes: {
+    list(filter?: RouteListFilter): Promise<RouteRecord[]>;
+    get(id: string): Promise<RouteRecord | null>;
+    getBySlug(slug: string): Promise<RouteRecord | null>;
+    getByCorridor(corridor: string, tripType: string): Promise<RouteRecord | null>;
+    create(record: RouteRecord): Promise<RouteRecord>;
+    update(id: string, patch: Partial<RouteRecord>): Promise<RouteRecord | null>;
+    listFleetFares(routeId: string): Promise<RouteFleetFareRecord[]>;
+    upsertFleetFare(routeId: string, fleetCode: string, values: { oneWayFareInr?: number | null; roundTripFareInr?: number | null }): Promise<RouteFleetFareRecord>;
+    listCharges(routeId: string): Promise<RouteChargeRecord[]>;
+    addCharge(routeId: string, charge: { kind: RouteChargeRecord["kind"]; amountInr: number; appliesTo?: string; note?: string | null }): Promise<RouteChargeRecord>;
+    deleteCharge(id: string): Promise<boolean>;
+  };
+
+  slugRedirects: {
+    get(oldSlug: string): Promise<SlugRedirectRecord | null>;
+    put(oldSlug: string, entityType: SlugRedirectRecord["entityType"], newSlug: string): Promise<void>;
+  };
 };
 
 export type DeviceRegistrationRecord = {
@@ -338,4 +357,61 @@ export type FleetFareRuleRecord = {
   nightAllowance: number;
   createdAt: string;
   updatedAt: string;
+};
+
+export type RouteStatus = "draft" | "published" | "archived";
+
+export type RouteRecord = {
+  id: string;
+  slug: string;
+  originCity: string;
+  destinationCity: string;
+  corridor: string;
+  tripType: "one-way" | "round-trip";
+  distanceKm?: number | null;
+  durationText?: string | null;
+  status: RouteStatus;
+  isFeatured: boolean;
+  featuredOrder?: number | null;
+  publishedAt?: string | null;
+  newUntil?: string | null;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
+  heroImageUrl?: string | null;
+  gallery: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RouteListFilter = {
+  status?: RouteStatus;
+  featured?: boolean;
+  q?: string;
+};
+
+export type RouteFleetFareRecord = {
+  id: string;
+  routeId: string;
+  fleetCode: string;
+  oneWayFareInr?: number | null;
+  roundTripFareInr?: number | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RouteChargeRecord = {
+  id: string;
+  routeId: string;
+  kind: "toll" | "interstate" | "driver" | "night_halt" | "other";
+  amountInr: number;
+  appliesTo: string;
+  note?: string | null;
+  createdAt: string;
+};
+
+export type SlugRedirectRecord = {
+  oldSlug: string;
+  entityType: "route" | "package" | "tour" | "monument";
+  newSlug: string;
+  createdAt: string;
 };
