@@ -16,7 +16,7 @@ import type {
   ReviewRecord,
   WebhookEventRecord,
 } from "../types/domain.js";
-import type { DeviceRegistrationRecord, FareRuleRecord, FleetRecord, FleetFareRuleRecord, InquiryListFilter, RentalEnquiryListFilter, PaymentListFilter, Repositories, RouteListFilter, RouteRecord, RouteFleetFareRecord, RouteChargeRecord, SlugRedirectRecord, PackageListFilter, PackageRecord, PackageFleetPriceRecord, LocalTourListFilter, LocalTourRecord, LocalTourFleetPriceRecord } from "./types.js";
+import type { DeviceRegistrationRecord, FareRuleRecord, FleetRecord, FleetFareRuleRecord, InquiryListFilter, RentalEnquiryListFilter, PaymentListFilter, Repositories, RouteListFilter, RouteRecord, RouteFleetFareRecord, RouteChargeRecord, SlugRedirectRecord, PackageListFilter, PackageRecord, PackageFleetPriceRecord, LocalTourListFilter, LocalTourRecord, LocalTourFleetPriceRecord, MonumentListFilter, MonumentRecord } from "./types.js";
 import type { RouteCatalogRecord } from "./route-catalog-types.js";
 import type {
   CancellationPolicyRecord,
@@ -24,7 +24,6 @@ import type {
   ContentStatus,
   DossierSignoffRecord,
   LocalSightseeingPackageRecord,
-  MonumentRecord,
   PackageVehicleUpgradeRecord,
   PetTaxiPolicyRecord,
   TourPackageRecord,
@@ -165,19 +164,6 @@ function mapDossierSignoff(row: Record<string, unknown>): DossierSignoffRecord {
     clientNotes: row.client_notes ? String(row.client_notes) : null,
     approvedBy: row.approved_by ? String(row.approved_by) : null,
     approvedAt: row.approved_at ? new Date(String(row.approved_at)).toISOString() : null,
-    createdAt: new Date(String(row.created_at)).toISOString(),
-    updatedAt: new Date(String(row.updated_at)).toISOString(),
-  };
-}
-
-function mapMonument(row: Record<string, unknown>): MonumentRecord {
-  return {
-    id: String(row.id),
-    name: String(row.name),
-    visitingHours: String(row.visiting_hours),
-    closedNote: String(row.closed_note),
-    historicalContext: row.historical_context ? String(row.historical_context) : null,
-    sortOrder: num(row.sort_order),
     createdAt: new Date(String(row.created_at)).toISOString(),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
   };
@@ -973,20 +959,6 @@ export async function createPostgresRepositories(databaseUrl: string): Promise<R
             client,
             `update cancellation_policies set notice_period_text=$2, fee_retained_percent=$3, refund_percent=$4, rule_text=$5, refund_timeline_note=$6, updated_at=$7 where id=$1`,
             [record.id, record.noticePeriodText, record.feeRetainedPercent, record.refundPercent, record.ruleText, record.refundTimelineNote, record.updatedAt]
-          );
-          return record;
-        },
-      },
-      monuments: {
-        async list() {
-          const rows = await query(client, "select * from monuments order by sort_order asc");
-          return rows.map(mapMonument);
-        },
-        async update(record: MonumentRecord) {
-          await query(
-            client,
-            `update monuments set name=$2, visiting_hours=$3, closed_note=$4, historical_context=$5, sort_order=$6, updated_at=$7 where id=$1`,
-            [record.id, record.name, record.visitingHours, record.closedNote, record.historicalContext, record.sortOrder, record.updatedAt]
           );
           return record;
         },
@@ -1961,6 +1933,81 @@ export async function createPostgresRepositories(databaseUrl: string): Promise<R
             return mapLocalTourFleetPrice(rows[0]);
           },
         },
+
+        monuments: {
+          async list(filter: MonumentListFilter = {}) {
+            const conds: string[] = [];
+            const params: unknown[] = [];
+            if (filter.status) { params.push(filter.status); conds.push(`status=$${params.length}`); }
+            if (filter.featured !== undefined) { params.push(filter.featured); conds.push(`is_featured=$${params.length}`); }
+            if (filter.city) { params.push(filter.city); conds.push(`city ilike $${params.length}`); }
+            if (filter.q) { params.push(`%${filter.q}%`); conds.push(`(name ilike $${params.length} or slug ilike $${params.length} or code ilike $${params.length})`); }
+            const where = conds.length ? `where ${conds.join(" and ")}` : "";
+            const rows = await query(
+              client,
+              `select * from monuments ${where} order by is_featured desc, featured_order nulls last, updated_at desc`,
+              params,
+            );
+            return rows.map(mapMonument);
+          },
+          async get(id: string) {
+            if (!isUuid(id)) return null;
+            const rows = await query(client, "select * from monuments where id=$1 limit 1", [id]);
+            return rows[0] ? mapMonument(rows[0]) : null;
+          },
+          async getBySlug(slug: string) {
+            const rows = await query(client, "select * from monuments where slug=$1 limit 1", [slug]);
+            return rows[0] ? mapMonument(rows[0]) : null;
+          },
+          async create(record: MonumentRecord) {
+            await query(
+              client,
+              `insert into monuments (id, slug, code, name, city,
+                                      entry_fee_indian_inr, entry_fee_foreigner_inr,
+                                      timings, closed_days, description,
+                                      status, is_featured, featured_order,
+                                      published_at, new_until, meta_title, meta_description,
+                                      hero_image_url, gallery, created_at, updated_at)
+               values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19::jsonb,$20,$21)`,
+              [record.id, record.slug, record.code, record.name, record.city,
+               record.entryFeeIndianInr ?? null, record.entryFeeForeignerInr ?? null,
+               record.timings ?? null, record.closedDays ?? null, record.description ?? null,
+               record.status, record.isFeatured, record.featuredOrder ?? null,
+               record.publishedAt ?? null, record.newUntil ?? null, record.metaTitle ?? null,
+               record.metaDescription ?? null, record.heroImageUrl ?? null,
+               JSON.stringify(record.gallery ?? []), record.createdAt, record.updatedAt],
+            );
+            return record;
+          },
+          async update(id: string, patch: Partial<MonumentRecord>) {
+            if (!isUuid(id)) return null;
+            const colMap: Record<string, string> = {
+              slug: "slug", code: "code", name: "name", city: "city",
+              entryFeeIndianInr: "entry_fee_indian_inr", entryFeeForeignerInr: "entry_fee_foreigner_inr",
+              timings: "timings", closedDays: "closed_days", description: "description",
+              status: "status", isFeatured: "is_featured", featuredOrder: "featured_order",
+              publishedAt: "published_at", newUntil: "new_until",
+              metaTitle: "meta_title", metaDescription: "meta_description",
+              heroImageUrl: "hero_image_url", gallery: "gallery",
+            };
+            const sets: string[] = [];
+            const params: unknown[] = [id];
+            for (const [key, col] of Object.entries(colMap)) {
+              const v = (patch as Record<string, unknown>)[key];
+              if (v === undefined) continue;
+              const isJson = key === "gallery";
+              params.push(isJson ? JSON.stringify(v) : v);
+              sets.push(`${col}=$${params.length}${isJson ? "::jsonb" : ""}`);
+            }
+            if (!sets.length) {
+              const rows = await query(client, "select * from monuments where id=$1 limit 1", [id]);
+              return rows[0] ? mapMonument(rows[0]) : null;
+            }
+            sets.push("updated_at=now()");
+            const rows = await query(client, `update monuments set ${sets.join(", ")} where id=$1 returning *`, params);
+            return rows[0] ? mapMonument(rows[0]) : null;
+          },
+        },
     };
   }
 
@@ -2008,6 +2055,32 @@ function mapFleetFareRule(row: Record<string, unknown>): FleetFareRuleRecord {
     perKm: Number(row.per_km),
     driverAllowance: Number(row.driver_allowance),
     nightAllowance: Number(row.night_allowance),
+    createdAt: new Date(String(row.created_at)).toISOString(),
+    updatedAt: new Date(String(row.updated_at)).toISOString(),
+  };
+}
+
+function mapMonument(row: Record<string, unknown>): MonumentRecord {
+  return {
+    id: String(row.id),
+    slug: String(row.slug),
+    code: String(row.code),
+    name: String(row.name),
+    city: String(row.city),
+    entryFeeIndianInr: row.entry_fee_indian_inr !== null && row.entry_fee_indian_inr !== undefined ? Number(row.entry_fee_indian_inr) : null,
+    entryFeeForeignerInr: row.entry_fee_foreigner_inr !== null && row.entry_fee_foreigner_inr !== undefined ? Number(row.entry_fee_foreigner_inr) : null,
+    timings: row.timings ? String(row.timings) : null,
+    closedDays: row.closed_days ? String(row.closed_days) : null,
+    description: row.description ? String(row.description) : null,
+    status: row.status as MonumentRecord["status"],
+    isFeatured: Boolean(row.is_featured),
+    featuredOrder: row.featured_order !== null && row.featured_order !== undefined ? Number(row.featured_order) : null,
+    publishedAt: row.published_at ? new Date(String(row.published_at)).toISOString() : null,
+    newUntil: row.new_until ? new Date(String(row.new_until)).toISOString() : null,
+    metaTitle: row.meta_title ? String(row.meta_title) : null,
+    metaDescription: row.meta_description ? String(row.meta_description) : null,
+    heroImageUrl: row.hero_image_url ? String(row.hero_image_url) : null,
+    gallery: Array.isArray(row.gallery) ? (row.gallery as string[]) : [],
     createdAt: new Date(String(row.created_at)).toISOString(),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
   };

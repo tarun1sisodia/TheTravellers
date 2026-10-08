@@ -21,7 +21,6 @@ import {
   SEED_COMPANY_PROFILE,
   SEED_DOSSIER_SIGNOFFS,
   SEED_LOCAL_PACKAGES,
-  SEED_MONUMENTS,
   SEED_PACKAGE_UPGRADES,
   SEED_PET_POLICY,
   SEED_TOUR_PACKAGES,
@@ -32,7 +31,6 @@ import type {
   CompanyProfileRecord,
   DossierSignoffRecord,
   LocalSightseeingPackageRecord,
-  MonumentRecord,
   PackageVehicleUpgradeRecord,
   PetTaxiPolicyRecord,
   TourPackageRecord,
@@ -76,6 +74,8 @@ import type {
   LocalTourListFilter,
   LocalTourRecord,
   LocalTourFleetPriceRecord,
+  MonumentListFilter,
+  MonumentRecord,
   ReviewListFilter,
   RentalEnquiryListFilter,
 } from "./types.js";
@@ -122,6 +122,7 @@ export function createMemoryRepositories(nowIso = new Date().toISOString()): Rep
   const packageFleetPrices = new Map<string, PackageFleetPriceRecord>();
   const localTours = new Map<string, LocalTourRecord>();
   const localTourFleetPrices = new Map<string, LocalTourFleetPriceRecord>();
+  const monuments = new Map<string, MonumentRecord>();
   const locks = new Map<string, Promise<void>>();
 
   const tourPackages = new Map<string, TourPackageRecord>();
@@ -132,7 +133,6 @@ export function createMemoryRepositories(nowIso = new Date().toISOString()): Rep
   const localPackages = new Map<string, LocalSightseeingPackageRecord>();
   const localPackagesByCode = new Map<string, string>();
   const cancellationPolicies: CancellationPolicyRecord[] = [];
-  const monuments: MonumentRecord[] = [];
   let petPolicy: PetTaxiPolicyRecord = clone(SEED_PET_POLICY);
   let companyProfile: CompanyProfileRecord = clone(SEED_COMPANY_PROFILE);
   const dossierSignoffs: DossierSignoffRecord[] = [];
@@ -225,7 +225,6 @@ export function createMemoryRepositories(nowIso = new Date().toISOString()): Rep
       localPackagesByCode.set(lp.packageCode, lp.id);
     }
     cancellationPolicies.push(...SEED_CANCELLATION_POLICIES.map(clone));
-    monuments.push(...SEED_MONUMENTS.map(clone));
     dossierSignoffs.push(...SEED_DOSSIER_SIGNOFFS.map(clone));
   }
 
@@ -659,20 +658,6 @@ export function createMemoryRepositories(nowIso = new Date().toISOString()): Rep
           cancellationPolicies[index] = clone(record);
         } else {
           cancellationPolicies.push(clone(record));
-        }
-        return clone(record);
-      },
-    },
-    monuments: {
-      async list() {
-        return [...monuments].sort((a, b) => a.sortOrder - b.sortOrder).map(clone);
-      },
-      async update(record) {
-        const index = monuments.findIndex((item) => item.id === record.id);
-        if (index >= 0) {
-          monuments[index] = clone(record);
-        } else {
-          monuments.push(clone(record));
         }
         return clone(record);
       },
@@ -1296,6 +1281,47 @@ export function createMemoryRepositories(nowIso = new Date().toISOString()): Rep
         };
         localTourFleetPrices.set(rec.id, rec);
         return clone(rec);
+      },
+    },
+
+    monuments: {
+      async list(filter: MonumentListFilter = {}) {
+        let rows = [...monuments.values()];
+        if (filter.status) rows = rows.filter((r) => r.status === filter.status);
+        if (filter.featured !== undefined) rows = rows.filter((r) => r.isFeatured === filter.featured);
+        if (filter.city) rows = rows.filter((r) => r.city.toLowerCase() === filter.city!.toLowerCase());
+        if (filter.q) {
+          const q = filter.q.toLowerCase();
+          rows = rows.filter((r) => [r.name, r.slug, r.code].some((v) => v.toLowerCase().includes(q)));
+        }
+        return rows
+          .sort((a, b) => Number(b.isFeatured) - Number(a.isFeatured) || b.updatedAt.localeCompare(a.updatedAt))
+          .map(clone);
+      },
+      async get(id: string) {
+        const r = monuments.get(id);
+        return r ? clone(r) : null;
+      },
+      async getBySlug(slug: string) {
+        for (const r of monuments.values()) if (r.slug === slug) return clone(r);
+        return null;
+      },
+      async create(record: MonumentRecord) {
+        for (const r of monuments.values()) {
+          if (r.slug === record.slug) throw new Error("duplicate slug");
+          if (r.code === record.code) throw new Error("duplicate code");
+        }
+        monuments.set(record.id, clone(record));
+        return clone(record);
+      },
+      async update(id: string, patch: Partial<MonumentRecord>) {
+        const r = monuments.get(id);
+        if (!r) return null;
+        const clean: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(patch)) if (v !== undefined) clean[k] = v;
+        const updated = { ...clone(r), ...clone(clean), id, updatedAt: new Date().toISOString() };
+        monuments.set(id, updated as MonumentRecord);
+        return clone(updated as MonumentRecord);
       },
     },
   };

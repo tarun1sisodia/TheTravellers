@@ -3,6 +3,7 @@ import type { Repositories, RouteRecord, RouteFleetFareRecord } from "../../db/t
 import { createRouteService, isRouteNew } from "./route.service.js";
 import { createPackageService } from "../packages/package.service.js";
 import { createLocalTourService } from "../local-tours/local-tour.service.js";
+import { createMonumentService } from "../monuments/monument.service.js";
 
 // Slice 2: reusable customer templates. Admin creates records; these templates
 // render published records. No manual page per record.
@@ -41,14 +42,16 @@ ${jsonLd ? `<script type="application/ld+json">${jsonLd}</script>` : ""}
 export function registerRoutePages(app: FastifyInstance, deps: { db: Repositories }) {
   const service = createRouteService(deps);
 
-  // Homepage: featured published routes + packages + tours (data-first; design later)
+  // Homepage: featured published routes + packages + tours + monuments (data-first; design later)
   app.get("/", async (_req: FastifyRequest, reply: FastifyReply) => {
     const packageService = createPackageService(deps);
     const tourService = createLocalTourService(deps);
-    const [featured, featuredPkgs, featuredTours] = await Promise.all([
+    const monumentService = createMonumentService(deps);
+    const [featured, featuredPkgs, featuredTours, featuredMonuments] = await Promise.all([
       service.listPublishedRoutes({ featured: true, limit: 8 }),
       packageService.listPublishedPackages({ featured: true, limit: 8 }),
       tourService.listPublishedLocalTours({ featured: true, limit: 8 }),
+      monumentService.listPublishedMonuments({ featured: true, limit: 8 }),
     ]);
     const routeCards = featured.map((r) => `
       <div class="card">
@@ -68,13 +71,20 @@ export function registerRoutePages(app: FastifyInstance, deps: { db: Repositorie
         ${t.isNew ? '<span class="badge">NEW</span>' : ""}</h3>
         <div class="meta">${esc(t.city)} · ${esc(t.durationText ?? "")}</div>
       </div>`).join("");
+    const monumentCards = featuredMonuments.map((m) => `
+      <div class="card">
+        <h3 style="margin:0 0 6px"><a href="/monuments/${esc(m.slug)}">${esc(m.name)}</a>
+        ${m.isNew ? '<span class="badge">NEW</span>' : ""}</h3>
+        <div class="meta">${esc(m.city)} · ${esc(m.timings ?? "")}</div>
+      </div>`).join("");
     return reply.type("text/html").send(shell(
       "TheTravellers — Taxi & Tour Booking",
       "Book one-way taxis, round trips, tour packages and local sightseeing across India.",
       `<h1>TheTravellers</h1>
        <h2>Featured routes</h2>${routeCards || '<p class="meta">No featured routes yet.</p>'}
        <h2>Featured packages</h2>${pkgCards || '<p class="meta">No featured packages yet.</p>'}
-       <h2>Featured local tours</h2>${tourCards || '<p class="meta">No featured tours yet.</p>'}`,
+       <h2>Featured local tours</h2>${tourCards || '<p class="meta">No featured tours yet.</p>'}
+       <h2>Featured monuments</h2>${monumentCards || '<p class="meta">No featured monuments yet.</p>'}`,
     ));
   });
 

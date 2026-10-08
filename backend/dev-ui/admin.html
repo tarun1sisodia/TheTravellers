@@ -268,6 +268,31 @@ mkcard('12e · Public tours — GET /api/v1/tours', [
 json => { const rows=(json.data&&json.data.items)||[]; if(!rows.length) return '';
   return '<table class="data"><tr><th>slug</th><th>city</th><th>isNew</th></tr>'+rows.map(r=>'<tr><td><a href="/tours/'+r.slug+'" target="_blank">'+r.slug+'</a></td><td>'+r.city+'</td><td>'+!!r.isNew+'</td></tr>').join('')+'</table>'; });
 
+// 13. Monuments (Slice 5) — transport resolves via routes/tours, no pricing engine
+mkcard('13 · Monuments — GET /api/v1/ops/admin/monuments', [
+  {name:'status',label:'status',type:'select',options:['','draft','published','archived'],value:''},
+  {name:'city',label:'city',ph:'Agra'},
+], 'List', b => { const p={}; if(b.status)p.status=b.status; if(b.city)p.city=b.city; return api('GET','/api/v1/ops/admin/monuments?'+new URLSearchParams(p)); },
+json => { const rows=(json.data&&json.data.items)||[]; if(!rows.length) return '';
+  return '<table class="data"><tr><th>id</th><th>slug</th><th>city</th><th>status</th></tr>'+rows.map(r=>'<tr><td>'+r.id.slice(0,8)+'</td><td><a href="/monuments/'+r.slug+'" target="_blank">'+r.slug+'</a></td><td>'+r.city+'</td><td>'+r.status+'</td></tr>').join('')+'</table>'; });
+mkcard('13b · Create monument — POST /api/v1/ops/admin/monuments', [
+  {name:'name',label:'name',value:'Fatehpur Sikri'},
+  {name:'city',label:'city',value:'Agra'},
+  {name:'entryFeeIndianInr',label:'entryFeeIndianInr',value:'50'},
+  {name:'entryFeeForeignerInr',label:'entryFeeForeignerInr',value:'610'},
+  {name:'timings',label:'timings',value:'Sunrise to sunset'},
+], 'Create (draft)', b => api('POST','/api/v1/ops/admin/monuments', numify(b,['entryFeeIndianInr','entryFeeForeignerInr'])),
+json => '<div class="meta">id <b>'+((json.data||{}).id)+'</b> slug <b>'+((json.data||{}).slug)+'</b></div>');
+mkcard('13c · Publish / archive monument', [
+  {name:'id',label:'monument id'},
+], 'Publish', b => api('POST','/api/v1/ops/admin/monuments/'+encodeURIComponent(b.id)+'/publish'), null,
+[['Archive', b => api('POST','/api/v1/ops/admin/monuments/'+encodeURIComponent(b.id)+'/archive')]]);
+mkcard('13d · Public monuments — GET /api/v1/monuments', [
+  {name:'city',label:'city',ph:'Agra'},
+], 'Load', b => api('GET','/api/v1/monuments'+(b.city?'?city='+encodeURIComponent(b.city):'')),
+json => { const rows=(json.data&&json.data.items)||[]; if(!rows.length) return '';
+  return '<table class="data"><tr><th>slug</th><th>city</th><th>isNew</th></tr>'+rows.map(r=>'<tr><td><a href="/monuments/'+r.slug+'" target="_blank">'+r.slug+'</a></td><td>'+r.city+'</td><td>'+!!r.isNew+'</td></tr>').join('')+'</table>'; });
+
 renderToken();
 </script>
 </body>

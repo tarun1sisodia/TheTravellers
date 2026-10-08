@@ -5,7 +5,6 @@ import type {
   ContentStatus,
   DossierSignoffRecord,
   LocalSightseeingPackageRecord,
-  MonumentRecord,
   PackageVehicleUpgradeRecord,
   PetTaxiPolicyRecord,
   TourPackageRecord,
@@ -172,11 +171,6 @@ export type Repositories = {
     update(record: CancellationPolicyRecord): Promise<CancellationPolicyRecord>;
   };
 
-  monuments: {
-    list(): Promise<MonumentRecord[]>;
-    update(record: MonumentRecord): Promise<MonumentRecord>;
-  };
-
   petPolicy: {
     get(): Promise<PetTaxiPolicyRecord | null>;
     update(record: PetTaxiPolicyRecord): Promise<PetTaxiPolicyRecord>;
@@ -325,6 +319,14 @@ export type Repositories = {
     update(id: string, patch: Partial<LocalTourRecord>): Promise<LocalTourRecord | null>;
     listFleetPrices(tourId: string): Promise<LocalTourFleetPriceRecord[]>;
     upsertFleetPrice(tourId: string, fleetCode: string, priceInr: number): Promise<LocalTourFleetPriceRecord>;
+  };
+
+  monuments: {
+    list(filter?: MonumentListFilter): Promise<MonumentRecord[]>;
+    get(id: string): Promise<MonumentRecord | null>;
+    getBySlug(slug: string): Promise<MonumentRecord | null>;
+    create(record: MonumentRecord): Promise<MonumentRecord>;
+    update(id: string, patch: Partial<MonumentRecord>): Promise<MonumentRecord | null>;
   };
 };
 
@@ -524,4 +526,37 @@ export type LocalTourFleetPriceRecord = {
   priceInr: number;
   createdAt: string;
   updatedAt: string;
+};
+
+export type MonumentStatus = "draft" | "published" | "archived";
+
+export type MonumentRecord = {
+  id: string;
+  slug: string;
+  code: string;
+  name: string;
+  city: string;
+  entryFeeIndianInr?: number | null;
+  entryFeeForeignerInr?: number | null;
+  timings?: string | null;
+  closedDays?: string | null;
+  description?: string | null;
+  status: MonumentStatus;
+  isFeatured: boolean;
+  featuredOrder?: number | null;
+  publishedAt?: string | null;
+  newUntil?: string | null;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
+  heroImageUrl?: string | null;
+  gallery: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MonumentListFilter = {
+  status?: MonumentStatus;
+  featured?: boolean;
+  q?: string;
+  city?: string;
 };
