@@ -5,7 +5,7 @@ import type { Repositories } from "../../db/types.js";
 
 export function registerLocalTourRoutes(app: FastifyInstance, deps: { db: Repositories }) {
   const service = createLocalTourService(deps);
-  const controller = createLocalTourController(service);
+  const controller = createLocalTourController(service, deps);
 
   // Admin
   app.get("/api/v1/ops/admin/tours", controller.listLocalTours);

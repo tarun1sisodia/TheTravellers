@@ -1,4 +1,6 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
+import type { Repositories } from "../../db/types.js";
+import { auditContentLifecycle } from "../../shared/content-audit.js";
 import { requireUser } from "../../middlewares/authGuard.js";
 import { sendSuccess } from "../../middlewares/errorHandler.js";
 import { ADMIN_ROLES, requireRole } from "../../middlewares/roleGuard.js";
@@ -14,7 +16,7 @@ import {
 import { FleetCodeSchema } from "../fleet/fleet.schema.js";
 import type { createLocalTourService } from "./local-tour.service.js";
 
-export function createLocalTourController(service: ReturnType<typeof createLocalTourService>) {
+export function createLocalTourController(service: ReturnType<typeof createLocalTourService>, deps: { db: Repositories }) {
   const admin = (request: FastifyRequest) => {
     requireUser(request);
     requireRole(request, ADMIN_ROLES);
@@ -55,13 +57,19 @@ export function createLocalTourController(service: ReturnType<typeof createLocal
     async publishLocalTour(request: FastifyRequest, reply: FastifyReply) {
       admin(request);
       const { id } = LocalTourIdParamSchema.parse(request.params);
-      return sendSuccess(reply, await service.publishLocalTour(id));
+      const before = await service.getLocalTour(id).catch(() => null);
+      const result = await service.publishLocalTour(id);
+      await auditContentLifecycle(deps.db, request, "publish", "local_tour", id, before?.status ?? "unknown");
+      return sendSuccess(reply, result);
     },
 
     async archiveLocalTour(request: FastifyRequest, reply: FastifyReply) {
       admin(request);
       const { id } = LocalTourIdParamSchema.parse(request.params);
-      return sendSuccess(reply, await service.archiveLocalTour(id));
+      const before = await service.getLocalTour(id).catch(() => null);
+      const result = await service.archiveLocalTour(id);
+      await auditContentLifecycle(deps.db, request, "archive", "local_tour", id, before?.status ?? "unknown");
+      return sendSuccess(reply, result);
     },
 
     async upsertLocalTourFleetPrice(request: FastifyRequest, reply: FastifyReply) {

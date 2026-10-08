@@ -41,6 +41,7 @@ import { registerLocalTourRoutes } from "./modules/local-tours/local-tour.routes
 import { registerLocalTourPages } from "./modules/local-tours/local-tour.pages.js";
 import { registerMonumentRoutes } from "./modules/monuments/monument.routes.js";
 import { registerMonumentPages } from "./modules/monuments/monument.pages.js";
+import { registerSeoRoutes } from "./modules/seo/seo.routes.js";
 import { createNotificationService } from "./modules/notifications/notification.service.js";
 import { createPaymentController } from "./modules/payments/payment.controller.js";
 import { registerPaymentRoutes } from "./modules/payments/payment.routes.js";
@@ -217,6 +218,7 @@ export async function buildApp(options: AppOptions): Promise<BuiltApp> {
   registerLocalTourPages(app, { db });
   registerMonumentRoutes(app, { db });
   registerMonumentPages(app, { db });
+  registerSeoRoutes(app, { db });
   await registerBookingRoutes(app, createBookingController(bookingService, env.CUSTOMER_AUTH_REQUIRED_FOR_NEW_BOOKINGS));
   const bookingIntentService = createBookingIntentService({ db, clock, fareService, bookingService });
   await registerBookingIntentRoutes(app, createBookingIntentController(bookingIntentService));

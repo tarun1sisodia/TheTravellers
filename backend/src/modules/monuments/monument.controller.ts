@@ -1,4 +1,6 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
+import type { Repositories } from "../../db/types.js";
+import { auditContentLifecycle } from "../../shared/content-audit.js";
 import { z } from "zod";
 import { requireUser } from "../../middlewares/authGuard.js";
 import { sendSuccess } from "../../middlewares/errorHandler.js";
@@ -13,7 +15,7 @@ import type { createMonumentService } from "./monument.service.js";
 const IdParamSchema = z.object({ id: z.string().uuid() });
 const SlugParamSchema = z.object({ slug: z.string().min(1).max(160) });
 
-export function createMonumentController(service: ReturnType<typeof createMonumentService>) {
+export function createMonumentController(service: ReturnType<typeof createMonumentService>, deps: { db: Repositories }) {
   const admin = (request: FastifyRequest) => {
     requireUser(request);
     requireRole(request, ADMIN_ROLES);
@@ -54,13 +56,19 @@ export function createMonumentController(service: ReturnType<typeof createMonume
     async publishMonument(request: FastifyRequest, reply: FastifyReply) {
       admin(request);
       const { id } = IdParamSchema.parse(request.params);
-      return sendSuccess(reply, await service.publishMonument(id));
+      const before = await service.getMonument(id).catch(() => null);
+      const result = await service.publishMonument(id);
+      await auditContentLifecycle(deps.db, request, "publish", "monument", id, before?.status ?? "unknown");
+      return sendSuccess(reply, result);
     },
 
     async archiveMonument(request: FastifyRequest, reply: FastifyReply) {
       admin(request);
       const { id } = IdParamSchema.parse(request.params);
-      return sendSuccess(reply, await service.archiveMonument(id));
+      const before = await service.getMonument(id).catch(() => null);
+      const result = await service.archiveMonument(id);
+      await auditContentLifecycle(deps.db, request, "archive", "monument", id, before?.status ?? "unknown");
+      return sendSuccess(reply, result);
     },
 
     async listPublishedMonuments(request: FastifyRequest, reply: FastifyReply) {

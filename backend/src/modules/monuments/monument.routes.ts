@@ -5,7 +5,7 @@ import type { Repositories } from "../../db/types.js";
 
 export function registerMonumentRoutes(app: FastifyInstance, deps: { db: Repositories }) {
   const service = createMonumentService(deps);
-  const controller = createMonumentController(service);
+  const controller = createMonumentController(service, deps);
 
   // Admin
   app.get("/api/v1/ops/admin/monuments", controller.listMonuments);

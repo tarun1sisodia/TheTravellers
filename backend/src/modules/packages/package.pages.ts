@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Repositories, PackageFleetPriceRecord } from "../../db/types.js";
 import { createPackageService, isPackageNew } from "./package.service.js";
+import { baseUrl } from "../seo/seo.routes.js";
 
 // Slice 3: /packages/[slug] customer template. Data-first.
 // Booking handoff: the template posts a draft with packageId; the fare engine
@@ -9,11 +10,12 @@ import { createPackageService, isPackageNew } from "./package.service.js";
 const esc = (v: unknown) =>
   String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-const shell = (title: string, description: string, body: string, jsonLd?: string) => `<!DOCTYPE html>
+const shell = (title: string, description: string, body: string, jsonLd?: string, canonical?: string) => `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(description)}">
+${canonical ? `<link rel="canonical" href="${esc(canonical)}">` : ""}
 <style>
 body{font-family:system-ui,sans-serif;margin:0;background:#fafafa;color:#18181b}
 .wrap{max-width:960px;margin:0 auto;padding:24px}
@@ -113,6 +115,7 @@ export function registerPackagePages(app: FastifyInstance, deps: { db: Repositor
       pkg.metaDescription ?? pkg.tagline ?? "",
       body,
       jsonLd,
+      `${baseUrl(request)}/packages/${encodeURIComponent(pkg.slug)}`,
     ));
   });
 }

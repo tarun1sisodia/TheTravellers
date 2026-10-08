@@ -1,4 +1,6 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
+import type { Repositories } from "../../db/types.js";
+import { auditContentLifecycle } from "../../shared/content-audit.js";
 import { requireUser } from "../../middlewares/authGuard.js";
 import { sendSuccess } from "../../middlewares/errorHandler.js";
 import { ADMIN_ROLES, requireRole } from "../../middlewares/roleGuard.js";
@@ -16,7 +18,7 @@ import {
 import type { createRouteService } from "./route.service.js";
 import { FleetCodeSchema } from "../fleet/fleet.schema.js";
 
-export function createRouteController(service: ReturnType<typeof createRouteService>) {
+export function createRouteController(service: ReturnType<typeof createRouteService>, deps: { db: Repositories }) {
   const admin = (request: FastifyRequest) => {
     requireUser(request);
     requireRole(request, ADMIN_ROLES);
@@ -57,13 +59,19 @@ export function createRouteController(service: ReturnType<typeof createRouteServ
     async publishRoute(request: FastifyRequest, reply: FastifyReply) {
       admin(request);
       const { id } = RouteIdParamSchema.parse(request.params);
-      return sendSuccess(reply, await service.publishRoute(id));
+      const before = await service.getRoute(id).catch(() => null);
+      const result = await service.publishRoute(id);
+      await auditContentLifecycle(deps.db, request, "publish", "route", id, before?.status ?? "unknown");
+      return sendSuccess(reply, result);
     },
 
     async archiveRoute(request: FastifyRequest, reply: FastifyReply) {
       admin(request);
       const { id } = RouteIdParamSchema.parse(request.params);
-      return sendSuccess(reply, await service.archiveRoute(id));
+      const before = await service.getRoute(id).catch(() => null);
+      const result = await service.archiveRoute(id);
+      await auditContentLifecycle(deps.db, request, "archive", "route", id, before?.status ?? "unknown");
+      return sendSuccess(reply, result);
     },
 
     async upsertRouteFleetFare(request: FastifyRequest, reply: FastifyReply) {

@@ -5,7 +5,7 @@ import type { Repositories } from "../../db/types.js";
 
 export function registerPackageRoutes(app: FastifyInstance, deps: { db: Repositories }) {
   const service = createPackageService(deps);
-  const controller = createPackageController(service);
+  const controller = createPackageController(service, deps);
 
   // Admin
   app.get("/api/v1/ops/admin/packages", controller.listPackages);

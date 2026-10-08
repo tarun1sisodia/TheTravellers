@@ -1,4 +1,6 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
+import type { Repositories } from "../../db/types.js";
+import { auditContentLifecycle } from "../../shared/content-audit.js";
 import { requireUser } from "../../middlewares/authGuard.js";
 import { sendSuccess } from "../../middlewares/errorHandler.js";
 import { ADMIN_ROLES, requireRole } from "../../middlewares/roleGuard.js";
@@ -14,7 +16,7 @@ import {
 import { FleetCodeSchema } from "../fleet/fleet.schema.js";
 import type { createPackageService } from "./package.service.js";
 
-export function createPackageController(service: ReturnType<typeof createPackageService>) {
+export function createPackageController(service: ReturnType<typeof createPackageService>, deps: { db: Repositories }) {
   const admin = (request: FastifyRequest) => {
     requireUser(request);
     requireRole(request, ADMIN_ROLES);
@@ -54,13 +56,19 @@ export function createPackageController(service: ReturnType<typeof createPackage
     async publishPackage(request: FastifyRequest, reply: FastifyReply) {
       admin(request);
       const { id } = PackageIdParamSchema.parse(request.params);
-      return sendSuccess(reply, await service.publishPackage(id));
+      const before = await service.getPackage(id).catch(() => null);
+      const result = await service.publishPackage(id);
+      await auditContentLifecycle(deps.db, request, "publish", "package", id, before?.status ?? "unknown");
+      return sendSuccess(reply, result);
     },
 
     async archivePackage(request: FastifyRequest, reply: FastifyReply) {
       admin(request);
       const { id } = PackageIdParamSchema.parse(request.params);
-      return sendSuccess(reply, await service.archivePackage(id));
+      const before = await service.getPackage(id).catch(() => null);
+      const result = await service.archivePackage(id);
+      await auditContentLifecycle(deps.db, request, "archive", "package", id, before?.status ?? "unknown");
+      return sendSuccess(reply, result);
     },
 
     async upsertPackageFleetPrice(request: FastifyRequest, reply: FastifyReply) {

@@ -5,7 +5,7 @@ import type { Repositories } from "../../db/types.js";
 
 export function registerRouteRoutes(app: FastifyInstance, deps: { db: Repositories }) {
   const service = createRouteService(deps);
-  const controller = createRouteController(service);
+  const controller = createRouteController(service, deps);
 
   // Admin
   app.get("/api/v1/ops/admin/routes", controller.listRoutes);

@@ -69,7 +69,7 @@ describe("Slice 5 — monument lifecycle", () => {
     const t = await tours.createLocalTour({ title: "Agra Local", city: "Agra" });
     await tours.publishLocalTour(t.id);
 
-    const r = await routes.createRoute({ originCity: "Delhi", destinationCity: "Agra", corridor: "Delhi–Agra" });
+    const r = await routes.createRoute({ originCity: "Delhi", destinationCity: "Agra", tripType: "one-way" });
     await routes.publishRoute(r.id);
 
     const result = await monuments.getPublishedMonument("taj-mahal");
@@ -86,7 +86,7 @@ describe("Slice 5 — monument lifecycle", () => {
     await tours.createLocalTour({ title: "Agra Local Draft", city: "Agra" }); // draft
     const d = await tours.createLocalTour({ title: "Delhi Local", city: "Delhi" });
     await tours.publishLocalTour(d.id);
-    await routes.createRoute({ originCity: "Jaipur", destinationCity: "Udaipur", corridor: "Jaipur–Udaipur" }); // draft + wrong city
+    await routes.createRoute({ originCity: "Jaipur", destinationCity: "Udaipur", tripType: "one-way" }); // draft + wrong city
 
     const result = await monuments.getPublishedMonument("taj-mahal");
     expect(result.transport!.localTours).toHaveLength(0);
