@@ -95,7 +95,6 @@ json => { const rows=(json.data&&(json.data.items||json.data.bookings||json.data
 mkcard('2 · Booking transition — POST /api/v1/ops/admin/bookings/:id/transition', [
   {name:'id',label:'booking id (uuid)'},
   {name:'to',label:'to status',type:'select',options:['confirmed','cancelled','completed','refunded','no_show'],value:'cancelled'},
-  {name:'reason',label:'reason',value:'customer request'},
 ], 'Transition', b => { const id=b.id; delete b.id; return api('POST','/api/v1/ops/admin/bookings/'+encodeURIComponent(id)+'/transition', b); }, null);
 
 // 3. Refunds
