@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TheTravellers — Customer Dev UI (Slice 0)</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; background: #f4f4f5; color: #18181b; }
+  header { background: #18181b; color: #fff; padding: 12px 20px; position: sticky; top: 0; z-index: 10; }
+  header h1 { margin: 0; font-size: 16px; display: inline; }
+  header .env { background: #f59e0b; color: #000; font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-left: 10px; }
+  #tokenbar { background: #fff; border-bottom: 1px solid #e4e4e7; padding: 10px 20px; display: flex; gap: 8px; align-items: center; position: sticky; top: 45px; z-index: 9; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px; }
+  section.card { background: #fff; border: 1px solid #e4e4e7; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  section.card h2 { margin: 0 0 12px; font-size: 15px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; margin-bottom: 10px; }
+  label { font-size: 11px; color: #52525b; display: block; margin-bottom: 2px; }
+  input, select { width: 100%; padding: 6px 8px; border: 1px solid #d4d4d8; border-radius: 6px; font-size: 13px; box-sizing: border-box; }
+  button { background: #18181b; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  button:hover { background: #3f3f46; }
+  pre.out { background: #18181b; color: #a7f3d0; padding: 12px; border-radius: 6px; font-size: 12px; overflow: auto; max-height: 400px; white-space: pre-wrap; }
+  .meta { font-size: 12px; color: #52525b; margin: 6px 0; }
+  .meta b { color: #18181b; }
+  table.data { border-collapse: collapse; width: 100%; font-size: 12px; margin-top: 8px; }
+  table.data th, table.data td { border: 1px solid #e4e4e7; padding: 6px 8px; text-align: left; }
+  table.data th { background: #f4f4f5; }
+  .ok { color: #15803d; font-weight: bold; } .err { color: #b91c1c; font-weight: bold; }
+  nav.links { padding: 10px 20px; font-size: 13px; }
+  nav.links a { margin-right: 12px; }
+</style>
+</head>
+<body>
+<header><h1>TheTravellers — Customer Dev UI</h1><span class="env">DEV ONLY · Slice 0</span></header>
+<nav class="links"><a href="/dev/customer">Customer</a><a href="/dev/admin">Admin</a><a href="/api/v1/health" target="_blank">/api/v1/health</a></nav>
+<div id="tokenbar">
+  <label style="margin:0">Bearer token</label>
+  <input id="token" placeholder="test-customer (needs ALLOW_TEST_AUTH=true on server)" style="max-width:340px">
+  <button onclick="saveToken()">Save</button>
+  <span class="meta" id="tokenstate"></span>
+</div>
+<main id="app"></main>
+<script>
+const $ = id => document.getElementById(id);
+let token = localStorage.getItem('tt_token') || '';
+function saveToken(){ token = $('token').value.trim(); localStorage.setItem('tt_token', token); renderToken(); }
+function renderToken(){ $('token').value = token; $('tokenstate').innerHTML = token ? '<b>token set</b>' : 'no token — authed endpoints will 401'; }
+async function api(method, path, body){
+  const r = await fetch(path, { method, headers: Object.assign({'Content-Type':'application/json'}, token?{Authorization:'Bearer '+token}:{}), body: body!==undefined?JSON.stringify(body):undefined });
+  let json; try { json = await r.json(); } catch(e){ json = {parseError:true}; }
+  return { status: r.status, json };
+}
+function out(el, res, render){
+  const badge = res.status>=200&&res.status<300 ? '<span class="ok">'+res.status+'</span>' : '<span class="err">'+res.status+'</span>';
+  let html = '<div class="meta">HTTP '+badge+'</div>';
+  if (render) html += render(res.json);
+  html += '<pre class="out">'+escapeHtml(JSON.stringify(res.json,null,1)).slice(0,6000)+'</pre>';
+  el.innerHTML = html;
+}
+function escapeHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+function field(f){
+  const id = 'f_'+f.name+Math.random().toString(36).slice(2,7);
+  let input;
+  if (f.type==='select') input = '<select id="'+id+'" data-k="'+f.name+'">'+f.options.map(o=>'<option value="'+o+'"'+(o===f.value?' selected':'')+'>'+o+'</option>').join('')+'</select>';
+  else if (f.type==='textarea') input = '<textarea id="'+id+'" data-k="'+f.name+'" rows="3">'+(f.value||'')+'</textarea>';
+  else input = '<input id="'+id+'" data-k="'+f.name+'" type="'+(f.type||'text')+'" value="'+(f.value||'')+'" placeholder="'+(f.ph||'')+'">';
+  return '<div><label>'+f.label+'</label>'+input+'</div>';
+}
+function collect(box){
+  const o = {};
+  box.querySelectorAll('[data-k]').forEach(el=>{ const v = el.value.trim(); if(v!=='') o[el.dataset.k]=v; });
+  return o;
+}
+function numify(o, keys){ keys.forEach(k=>{ if(o[k]!==undefined) o[k]=Number(o[k]); }); return o; }
+function mkcard(title, fields, btnLabel, go, render){
+  const s = document.createElement('section'); s.className='card';
+  s.innerHTML = '<h2>'+title+'</h2><div class="grid">'+fields.map(field).join('')+'</div><button>'+btnLabel+'</button><div class="result" style="margin-top:10px"></div>';
+  const box = s.querySelector('.grid'), btn = s.querySelector('button'), res = s.querySelector('.result');
+  btn.onclick = async ()=>{ btn.disabled=true; res.innerHTML='<div class="meta">…</div>';
+    try { const r = await go(collect(box)); out(res, r, render); } catch(e){ res.innerHTML='<span class="err">'+escapeHtml(String(e))+'</span>'; }
+    btn.disabled=false; };
+  $('app').appendChild(s);
+}
+const TIERS = ['sedan','ertiga','innova-crysta','tempo-traveller','urbania'];
+const TRIPS = ['one-way','round-trip','local-tour','airport-transfer'];
+const isoPlus = d => { const x=new Date(); x.setDate(x.getDate()+d); x.setHours(10,0,0,0); return x.toISOString(); };
+
+// 1. Fare quote
+mkcard('1 · Fare quote — POST /api/v1/fares/calculate', [
+  {name:'tripType',label:'tripType',type:'select',options:TRIPS,value:'one-way'},
+  {name:'vehicleTier',label:'vehicleTier',type:'select',options:TIERS,value:'sedan'},
+  {name:'originName',label:'origin',value:'Agra'},
+  {name:'destinationName',label:'destination',value:'Delhi'},
+  {name:'distanceKm',label:'distanceKm',value:'230'},
+  {name:'pickupDatetime',label:'pickupDatetime',value:isoPlus(17)},
+  {name:'promoCode',label:'promoCode (optional)',ph:'ASTTCAR500OFF'},
+], 'Calculate', b => api('POST','/api/v1/fares/calculate', numify(b,['distanceKm'])),
+json => { const d=json.data||{}; return '<div class="meta">total <b>₹'+d.totalFare+'</b> = base ₹'+d.baseFare+' + night ₹'+d.nightAllowance+' + driver ₹'+d.driverAllowance+' − discount ₹'+d.discountAmount+' · advance ₹'+d.advanceAmount+' · billedKm '+d.billedKm+' · rules: '+(d.rules||[]).join(', ')+'</div>'; });
+
+// 2. Booking draft
+mkcard('2 · Create booking draft — POST /api/v1/bookings/draft (auth required)', [
+  {name:'tripType',label:'tripType',type:'select',options:TRIPS,value:'one-way'},
+  {name:'vehicleTier',label:'vehicleTier',type:'select',options:TIERS,value:'sedan'},
+  {name:'originName',label:'origin',value:'Agra'},
+  {name:'destinationName',label:'destination',value:'Delhi'},
+  {name:'pickupAddress',label:'pickupAddress',value:'Taj East Gate Road, Taj Ganj'},
+  {name:'dropAddress',label:'dropAddress',value:'IGI Airport T3, New Delhi'},
+  {name:'pickupDatetime',label:'pickupDatetime',value:isoPlus(17)},
+  {name:'distanceKm',label:'distanceKm',value:'230'},
+  {name:'customerName',label:'customerName',value:'Test User'},
+  {name:'customerPhone',label:'customerPhone',value:'9876543210'},
+  {name:'customerEmail',label:'customerEmail',value:'test@example.com'},
+], 'Create draft', b => api('POST','/api/v1/bookings/draft', numify(b,['distanceKm'])),
+json => { const d=json.data||{}; return '<div class="meta">ticket <b>'+d.ticketId+'</b> · guestAccessToken <b>'+d.guestAccessToken+'</b> · total ₹'+(d.totalFare||d.fareTotal)+' · id '+d.id+'</div>'; });
+
+// 3. My bookings
+mkcard('3 · My bookings — GET /api/v1/me/bookings (auth)', [], 'List', () => api('GET','/api/v1/me/bookings'),
+json => { const rows=(json.data&&(json.data.items||json.data))||[]; if(!Array.isArray(rows)) return '';
+  return '<table class="data"><tr><th>ticket</th><th>status</th><th>total</th><th>advance</th><th>pickup</th></tr>'+rows.map(r=>'<tr><td>'+r.ticketId+'</td><td>'+r.status+'</td><td>₹'+r.totalFare+'</td><td>₹'+r.advanceAmount+'</td><td>'+(r.pickupDatetime||'').slice(0,16)+'</td></tr>').join('')+'</table>'; });
+
+// 4. Booking lookup
+mkcard('4 · Booking lookup — GET /api/v1/bookings/:ticketId?token=', [
+  {name:'ticketId',label:'ticketId',ph:'TKT-…'},
+  {name:'gtoken',label:'guestAccessToken'},
+], 'Lookup', b => api('GET','/api/v1/bookings/'+encodeURIComponent(b.ticketId)+'?token='+encodeURIComponent(b.gtoken||'')), null);
+
+// 5. Booking intent
+mkcard('5 · Booking intent — POST /api/v1/booking-intents', [
+  {name:'tripType',label:'tripType',type:'select',options:TRIPS,value:'one-way'},
+  {name:'vehicleTier',label:'vehicleTier',type:'select',options:TIERS,value:'sedan'},
+  {name:'originName',label:'origin',value:'Agra'},
+  {name:'destinationName',label:'destination',value:'Delhi'},
+  {name:'pickupDatetime',label:'pickupDatetime',value:isoPlus(17)},
+], 'Create intent', b => api('POST','/api/v1/booking-intents', b),
+json => '<div class="meta">intent id <b>'+((json.data||{}).id)+'</b> — use it with /:id/finalize</div>');
+mkcard('5b · Intent finalize — POST /api/v1/booking-intents/:id/finalize', [
+  {name:'id',label:'intent id'},
+  {name:'secret',label:'intent secret'},
+], 'Finalize', b => { const id=b.id; delete b.id; return api('POST','/api/v1/booking-intents/'+encodeURIComponent(id)+'/finalize', b); }, null);
+
+// 6. Payment checkout + status
+mkcard('6 · Payment checkout — POST /api/v1/payments/create-checkout (auth)', [
+  {name:'ticketId',label:'ticketId (e.g. TKT-…)'},
+  {name:'guestAccessToken',label:'guestAccessToken (if guest booking)'},
+  {name:'idempotencyKey',label:'idempotencyKey (uuid)',value:'123e4567-e89b-12d3-a456-426614174000'},
+], 'Create checkout', b => api('POST','/api/v1/payments/create-checkout', b),
+json => { const d=json.data||{}; return '<div class="meta">payment <b>'+d.paymentId+'</b> · razorpay order <b>'+(d.razorpayOrderId||d.orderId)+'</b> · amount ₹'+(d.amount||d.advanceAmount)+'</div>'; });
+mkcard('6b · Payment status — GET /api/v1/payments/:paymentId/status', [
+  {name:'paymentId',label:'paymentId'},
+], 'Check status', b => api('GET','/api/v1/payments/'+encodeURIComponent(b.paymentId)+'/status'), null);
+
+// 7. Device register
+mkcard('7 · Device register — POST /api/v1/devices/register', [
+  {name:'deviceId',label:'deviceId',value:'dev_'+Math.random().toString(36).slice(2,8)},
+  {name:'platform',label:'platform',type:'select',options:['web','android','ios'],value:'web'},
+  {name:'fcmToken',label:'fcmToken',value:'fcm_test_token'},
+  {name:'ticketId',label:'ticketId (optional)'},
+  {name:'guestAccessToken',label:'guestAccessToken (optional)'},
+], 'Register', b => api('POST','/api/v1/devices/register', b), null);
+
+// 8. Featured promos + cancellation policies (public)
+mkcard('8 · Featured promos — GET /api/v1/promos/featured', [], 'Load', () => api('GET','/api/v1/promos/featured'),
+json => { const rows=(json.data&&(json.data.items||json.data))||[]; if(!Array.isArray(rows)) return '';
+  return '<table class="data"><tr><th>code</th><th>type</th><th>value</th><th>group vehicles</th></tr>'+rows.map(r=>'<tr><td>'+r.code+'</td><td>'+(r.discountType||r.type)+'</td><td>'+(r.discountValue||r.value)+'</td><td>'+!!(r.allowGroupVehicles||r.allow_group_vehicles)+'</td></tr>').join('')+'</table>'; });
+mkcard('9 · Cancellation policies — GET /api/v1/cancellation-policies', [], 'Load', () => api('GET','/api/v1/cancellation-policies'), null);
+
+renderToken();
+</script>
+</body>
+</html>

@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TheTravellers — Admin Dev UI (Slice 0)</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; background: #faf7f2; color: #1c1917; }
+  header { background: #7c2d12; color: #fff; padding: 12px 20px; position: sticky; top: 0; z-index: 10; }
+  header h1 { margin: 0; font-size: 16px; display: inline; }
+  header .env { background: #f59e0b; color: #000; font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-left: 10px; }
+  #tokenbar { background: #fff; border-bottom: 1px solid #e7e5e4; padding: 10px 20px; display: flex; gap: 8px; align-items: center; position: sticky; top: 45px; z-index: 9; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px; }
+  section.card { background: #fff; border: 1px solid #e7e5e4; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  section.card h2 { margin: 0 0 12px; font-size: 15px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; margin-bottom: 10px; }
+  label { font-size: 11px; color: #78716c; display: block; margin-bottom: 2px; }
+  input, select, textarea { width: 100%; padding: 6px 8px; border: 1px solid #d6d3d1; border-radius: 6px; font-size: 13px; box-sizing: border-box; font-family: inherit; }
+  button { background: #7c2d12; color: #fff; border: 0; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; margin-right: 6px; }
+  button:hover { background: #9a3412; }
+  button.danger { background: #b91c1c; }
+  pre.out { background: #1c1917; color: #fcd34d; padding: 12px; border-radius: 6px; font-size: 12px; overflow: auto; max-height: 400px; white-space: pre-wrap; }
+  .meta { font-size: 12px; color: #78716c; margin: 6px 0; }
+  .meta b { color: #1c1917; }
+  table.data { border-collapse: collapse; width: 100%; font-size: 12px; margin-top: 8px; }
+  table.data th, table.data td { border: 1px solid #e7e5e4; padding: 6px 8px; text-align: left; }
+  table.data th { background: #faf7f2; }
+  .ok { color: #15803d; font-weight: bold; } .err { color: #b91c1c; font-weight: bold; }
+  nav.links { padding: 10px 20px; font-size: 13px; }
+  nav.links a { margin-right: 12px; }
+</style>
+</head>
+<body>
+<header><h1>TheTravellers — Admin Dev UI</h1><span class="env">DEV ONLY · Slice 0</span></header>
+<nav class="links"><a href="/dev/customer">Customer</a><a href="/dev/admin">Admin</a><a href="/api/v1/health" target="_blank">/api/v1/health</a></nav>
+<div id="tokenbar">
+  <label style="margin:0">Admin Bearer token</label>
+  <input id="token" placeholder="test-admin (needs ALLOW_TEST_AUTH=true on server)" style="max-width:340px">
+  <button onclick="saveToken()">Save</button>
+  <span class="meta" id="tokenstate"></span>
+</div>
+<main id="app"></main>
+<script>
+const $ = id => document.getElementById(id);
+let token = localStorage.getItem('tt_admin_token') || '';
+function saveToken(){ token = $('token').value.trim(); localStorage.setItem('tt_admin_token', token); renderToken(); }
+function renderToken(){ $('token').value = token; $('tokenstate').innerHTML = token ? '<b>token set</b>' : 'no token — admin endpoints will 401/403'; }
+async function api(method, path, body){
+  const r = await fetch(path, { method, headers: Object.assign({'Content-Type':'application/json'}, token?{Authorization:'Bearer '+token}:{}), body: body!==undefined?JSON.stringify(body):undefined });
+  let json; try { json = await r.json(); } catch(e){ json = {parseError:true}; }
+  return { status: r.status, json };
+}
+function out(el, res, render){
+  const badge = res.status>=200&&res.status<300 ? '<span class="ok">'+res.status+'</span>' : '<span class="err">'+res.status+'</span>';
+  let html = '<div class="meta">HTTP '+badge+'</div>';
+  if (render) html += render(res.json);
+  html += '<pre class="out">'+escapeHtml(JSON.stringify(res.json,null,1)).slice(0,6000)+'</pre>';
+  el.innerHTML = html;
+}
+function escapeHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+function field(f){
+  const id = 'f_'+f.name+Math.random().toString(36).slice(2,7);
+  let input;
+  if (f.type==='select') input = '<select id="'+id+'" data-k="'+f.name+'">'+f.options.map(o=>'<option value="'+o+'"'+(o===f.value?' selected':'')+'>'+o+'</option>').join('')+'</select>';
+  else if (f.type==='textarea') input = '<textarea id="'+id+'" data-k="'+f.name+'" rows="3">'+(f.value||'')+'</textarea>';
+  else input = '<input id="'+id+'" data-k="'+f.name+'" type="'+(f.type||'text')+'" value="'+(f.value||'')+'" placeholder="'+(f.ph||'')+'">';
+  return '<div><label>'+f.label+'</label>'+input+'</div>';
+}
+function collect(box){ const o={}; box.querySelectorAll('[data-k]').forEach(el=>{ const v=el.value.trim(); if(v!=='') o[el.dataset.k]=v; }); return o; }
+function numify(o, keys){ keys.forEach(k=>{ if(o[k]!==undefined&&o[k]!==''&&!isNaN(Number(o[k]))) o[k]=Number(o[k]); }); return o; }
+function mkcard(title, fields, btnLabel, go, render, extraBtns){
+  const s = document.createElement('section'); s.className='card';
+  s.innerHTML = '<h2>'+title+'</h2><div class="grid">'+fields.map(field).join('')+'</div><div class="btns"></div><div class="result" style="margin-top:10px"></div>';
+  const box = s.querySelector('.grid'), btns = s.querySelector('.btns'), res = s.querySelector('.result');
+  const mkbtn = (label, fn, cls) => { const b=document.createElement('button'); b.textContent=label; if(cls)b.className=cls;
+    b.onclick = async ()=>{ b.disabled=true; res.innerHTML='<div class="meta">…</div>';
+      try { const r = await fn(collect(box)); out(res, r, render); } catch(e){ res.innerHTML='<span class="err">'+escapeHtml(String(e))+'</span>'; }
+      b.disabled=false; }; btns.appendChild(b); };
+  mkbtn(btnLabel, go);
+  (extraBtns||[]).forEach(([l,f,c])=>mkbtn(l,f,c));
+  $('app').appendChild(s);
+}
+const row = (r,ks) => '<tr>'+ks.map(k=>'<td>'+(r[k]??'')+'</td>').join('')+'</tr>';
+
+// 1. Bookings
+mkcard('1 · Bookings — GET /api/v1/ops/admin/bookings', [
+  {name:'status',label:'status filter (optional)',ph:'confirmed'},
+  {name:'page',label:'page',value:'1'},
+], 'List bookings', b => api('GET','/api/v1/ops/admin/bookings?'+new URLSearchParams(numify(b,['page']))),
+json => { const rows=(json.data&&(json.data.items||json.data.bookings||json.data))||[]; if(!Array.isArray(rows)) return '';
+  return '<table class="data"><tr><th>id</th><th>ticket</th><th>status</th><th>total</th><th>advance</th><th>customer</th></tr>'+
+  rows.map(r=>row(r,['id','ticketId','status','totalFare','advanceAmount','customerName'])).join('')+'</table>'; });
+
+// 2. Transition
+mkcard('2 · Booking transition — POST /api/v1/ops/admin/bookings/:id/transition', [
+  {name:'id',label:'booking id (uuid)'},
+  {name:'to',label:'to status',type:'select',options:['confirmed','cancelled','completed','refunded','no_show'],value:'cancelled'},
+  {name:'reason',label:'reason',value:'customer request'},
+], 'Transition', b => { const id=b.id; delete b.id; return api('POST','/api/v1/ops/admin/bookings/'+encodeURIComponent(id)+'/transition', b); }, null);
+
+// 3. Refunds
+mkcard('3 · Create refund — POST /api/v1/ops/admin/refunds', [
+  {name:'bookingId',label:'bookingId'},
+  {name:'paymentId',label:'paymentId'},
+  {name:'amount',label:'amount (paise or ₹ — check schema)'},
+  {name:'reason',label:'reason',value:'cancelled > 24h'},
+], 'Create refund', b => api('POST','/api/v1/ops/admin/refunds', numify(b,['amount'])), null);
+
+// 4. Payments list
+mkcard('4 · Payments — GET /api/v1/ops/admin/payments', [
+  {name:'page',label:'page',value:'1'},
+], 'List payments', b => api('GET','/api/v1/ops/admin/payments?'+new URLSearchParams(numify(b,['page']))),
+json => { const rows=(json.data&&(json.data.items||json.data))||[]; if(!Array.isArray(rows)) return '';
+  return '<table class="data"><tr><th>id</th><th>booking</th><th>status</th><th>amount</th><th>provider</th></tr>'+rows.map(r=>row(r,['id','bookingId','status','amount','provider'])).join('')+'</table>'; });
+
+// 5. Fare rules
+mkcard('5 · Fare rules — GET /api/v1/ops/admin/fare-rules', [], 'Show active', () => api('GET','/api/v1/ops/admin/fare-rules'),
+json => { const d=json.data||{}; const vs=((d.config||{}).vehicles)||[]; if(!vs.length) return '';
+  return '<table class="data"><tr><th>tier</th><th>perKm</th></tr>'+vs.map(v=>'<tr><td>'+v.tier+'</td><td>₹'+v.perKm+'</td></tr>').join('')+'</table>'; });
+mkcard('5b · Fare rule versions — GET /api/v1/ops/admin/fare-rules/versions', [], 'List versions', () => api('GET','/api/v1/ops/admin/fare-rules/versions'),
+json => { const rows=(json.data&&(json.data.items||json.data))||[]; if(!Array.isArray(rows)) return '';
+  return '<table class="data"><tr><th>version</th><th>active</th><th>effectiveFrom</th></tr>'+rows.map(r=>row(r,['version','isActive','effectiveFrom'])).join('')+'</table>'; });
+mkcard('5c · Activate fare version — POST /api/v1/ops/admin/fare-rules/activate', [
+  {name:'version',label:'version',ph:'v2'},
+], 'Activate', b => api('POST','/api/v1/ops/admin/fare-rules/activate', b), null);
+mkcard('5d · Update fare rules — PUT /api/v1/ops/admin/fare-rules', [
+  {name:'config',label:'config JSON',type:'textarea',value:'{"vehicles":[{"tier":"sedan","perKm":10}]}'},
+], 'Update (new version)', b => { let cfg; try{ cfg=JSON.parse(b.config); }catch(e){ throw new Error('bad JSON: '+e.message); } return api('PUT','/api/v1/ops/admin/fare-rules',{config:cfg}); }, null);
+
+// 6. Promos
+mkcard('6 · Promos — GET /api/v1/ops/admin/promos', [], 'List', () => api('GET','/api/v1/ops/admin/promos'),
+json => { const rows=(json.data&&(json.data.items||json.data))||[]; if(!Array.isArray(rows)) return '';
+  return '<table class="data"><tr><th>id</th><th>code</th><th>active</th><th>group vehicles</th></tr>'+rows.map(r=>'<tr><td>'+(r.id||'').slice(0,8)+'</td><td>'+r.code+'</td><td>'+!!r.isActive+'</td><td>'+!!(r.allowGroupVehicles||r.allow_group_vehicles)+'</td></tr>').join('')+'</table>'; });
+mkcard('6b · Create promo — POST /api/v1/ops/admin/promos', [
+  {name:'code',label:'code',value:'TEST500'},
+  {name:'discountType',label:'discountType',type:'select',options:['flat','percent'],value:'flat'},
+  {name:'discountValue',label:'discountValue',value:'500'},
+  {name:'isActive',label:'isActive',type:'select',options:['true','false'],value:'true'},
+  {name:'allowGroupVehicles',label:'allowGroupVehicles',type:'select',options:['true','false'],value:'false'},
+], 'Create', b => api('POST','/api/v1/ops/admin/promos', Object.assign(numify(b,['discountValue']), {isActive:b.isActive==='true', allowGroupVehicles:b.allowGroupVehicles==='true'})), null);
+mkcard('6c · Update / delete promo', [
+  {name:'id',label:'promo id'},
+  {name:'patch',label:'PATCH JSON',type:'textarea',value:'{"isActive":false}'},
+], 'Patch', b => { let p; try{ p=JSON.parse(b.patch); }catch(e){ throw new Error('bad JSON'); } return api('PATCH','/api/v1/ops/admin/promos/'+encodeURIComponent(b.id), p); }, null,
+[['Delete',''+'', 'danger']].map(([l])=>[l, b => api('DELETE','/api/v1/ops/admin/promos/'+encodeURIComponent(b.id)), 'danger']));
+
+// 7. Cancellation policies
+mkcard('7 · Cancellation policies — GET /api/v1/ops/admin/cancellation-policies', [], 'List', () => api('GET','/api/v1/ops/admin/cancellation-policies'),
+json => { const rows=(json.data&&(json.data.items||json.data))||[]; if(!Array.isArray(rows)) return '';
+  return '<table class="data"><tr><th>id</th><th>name</th><th>rules</th></tr>'+rows.map(r=>'<tr><td>'+(r.id||'').slice(0,8)+'</td><td>'+(r.name||'')+'</td><td>'+escapeHtml(JSON.stringify(r.rules||r.slab||'')).slice(0,120)+'</td></tr>').join('')+'</table>'; });
+mkcard('7b · Patch policy — PATCH /api/v1/ops/admin/cancellation-policies/:id', [
+  {name:'id',label:'policy id'},
+  {name:'patch',label:'PATCH JSON',type:'textarea',value:'{}'},
+], 'Patch', b => { let p; try{ p=JSON.parse(b.patch); }catch(e){ throw new Error('bad JSON'); } return api('PATCH','/api/v1/ops/admin/cancellation-policies/'+encodeURIComponent(b.id), p); }, null);
+
+// 8. Audit logs
+mkcard('8 · Audit logs — GET /api/v1/ops/admin/audit-logs', [
+  {name:'page',label:'page',value:'1'},
+], 'List', b => api('GET','/api/v1/ops/admin/audit-logs?'+new URLSearchParams(numify(b,['page']))), null);
+
+renderToken();
+</script>
+</body>
+</html>

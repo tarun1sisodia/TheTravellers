@@ -6,8 +6,10 @@
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { z } from "zod";
+import path from "node:path";
+import fs from "node:fs/promises";
 import type { Logger } from "pino";
 import type { Env } from "./config/env.js";
 import { corsOriginList } from "./config/env.js";
@@ -268,6 +270,23 @@ export async function buildApp(options: AppOptions): Promise<BuiltApp> {
       return sendSuccess(reply, { success: true, deviceId: record.deviceId });
     },
   });
+
+  // Dev UI — dead-simple data-first customer/admin pages for endpoint verification.
+  // Explicitly never registered in production.
+  if (env.NODE_ENV !== "production") {
+    const devUiDir = path.join(process.cwd(), "dev-ui");
+    const serveDevUi = (file: string) => async (_request: unknown, reply: FastifyReply) => {
+      try {
+        const html = await fs.readFile(path.join(devUiDir, file), "utf8");
+        return reply.type("text/html").send(html);
+      } catch {
+        throw Errors.notFound("DEV_UI_MISSING", "Dev UI file not found. Start the server from backend/.");
+      }
+    };
+    app.get("/dev", async (_request: unknown, reply: FastifyReply) => reply.redirect("/dev/customer"));
+    app.get("/dev/customer", serveDevUi("customer.html"));
+    app.get("/dev/admin", serveDevUi("admin.html"));
+  }
 
   return { app, db, notifications };
 }
