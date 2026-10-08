@@ -83,6 +83,7 @@ export function registerRoutePages(app: FastifyInstance, deps: { db: Repositorie
       "TheTravellers — Taxi & Tour Booking",
       "Book one-way taxis, round trips, tour packages and local sightseeing across India.",
       `<h1>TheTravellers</h1>
+       <p><a href="/book" style="font-size:18px">Book a cab →</a> · <a href="/book/lookup">Find booking</a> · <a href="/api/v1/search?q=">Search</a></p>
        <h2>Featured routes</h2>${routeCards || '<p class="meta">No featured routes yet.</p>'}
        <h2>Featured packages</h2>${pkgCards || '<p class="meta">No featured packages yet.</p>'}
        <h2>Featured local tours</h2>${tourCards || '<p class="meta">No featured tours yet.</p>'}

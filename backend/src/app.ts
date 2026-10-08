@@ -42,6 +42,7 @@ import { registerLocalTourPages } from "./modules/local-tours/local-tour.pages.j
 import { registerMonumentRoutes } from "./modules/monuments/monument.routes.js";
 import { registerMonumentPages } from "./modules/monuments/monument.pages.js";
 import { registerSeoRoutes } from "./modules/seo/seo.routes.js";
+import { registerBookingUi } from "./modules/booking-ui/booking-ui.pages.js";
 import { createNotificationService } from "./modules/notifications/notification.service.js";
 import { createPaymentController } from "./modules/payments/payment.controller.js";
 import { registerPaymentRoutes } from "./modules/payments/payment.routes.js";
@@ -92,6 +93,9 @@ export async function buildApp(options: AppOptions): Promise<BuiltApp> {
   registerRequestId(app);
   registerErrorHandler(app);
   registerNetworkHeaders(app);
+
+  // Form bodies for the server-rendered booking UI (Slice 7)
+  await app.register(import("@fastify/formbody"));
 
   // Security headers - enable all protections, CSP only for API is minimal
   await app.register(helmet, {
@@ -219,6 +223,7 @@ export async function buildApp(options: AppOptions): Promise<BuiltApp> {
   registerMonumentRoutes(app, { db });
   registerMonumentPages(app, { db });
   registerSeoRoutes(app, { db });
+  registerBookingUi(app, { db });
   await registerBookingRoutes(app, createBookingController(bookingService, env.CUSTOMER_AUTH_REQUIRED_FOR_NEW_BOOKINGS));
   const bookingIntentService = createBookingIntentService({ db, clock, fareService, bookingService });
   await registerBookingIntentRoutes(app, createBookingIntentController(bookingIntentService));
