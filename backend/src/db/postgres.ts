@@ -16,7 +16,7 @@ import type {
   ReviewRecord,
   WebhookEventRecord,
 } from "../types/domain.js";
-import type { DeviceRegistrationRecord, FareRuleRecord, FleetRecord, FleetFareRuleRecord, InquiryListFilter, RentalEnquiryListFilter, PaymentListFilter, Repositories, RouteListFilter, RouteRecord, RouteFleetFareRecord, RouteChargeRecord, SlugRedirectRecord, PackageListFilter, PackageRecord, PackageFleetPriceRecord } from "./types.js";
+import type { DeviceRegistrationRecord, FareRuleRecord, FleetRecord, FleetFareRuleRecord, InquiryListFilter, RentalEnquiryListFilter, PaymentListFilter, Repositories, RouteListFilter, RouteRecord, RouteFleetFareRecord, RouteChargeRecord, SlugRedirectRecord, PackageListFilter, PackageRecord, PackageFleetPriceRecord, LocalTourListFilter, LocalTourRecord, LocalTourFleetPriceRecord } from "./types.js";
 import type { RouteCatalogRecord } from "./route-catalog-types.js";
 import type {
   CancellationPolicyRecord,
@@ -1865,6 +1865,102 @@ export async function createPostgresRepositories(databaseUrl: string): Promise<R
             return mapPackageFleetPrice(rows[0]);
           },
         },
+
+        localTours: {
+          async list(filter: LocalTourListFilter = {}) {
+            const conds: string[] = [];
+            const params: unknown[] = [];
+            if (filter.status) { params.push(filter.status); conds.push(`status=$${params.length}`); }
+            if (filter.featured !== undefined) { params.push(filter.featured); conds.push(`is_featured=$${params.length}`); }
+            if (filter.city) { params.push(filter.city); conds.push(`city ilike $${params.length}`); }
+            if (filter.q) { params.push(`%${filter.q}%`); conds.push(`(title ilike $${params.length} or slug ilike $${params.length} or code ilike $${params.length})`); }
+            const where = conds.length ? `where ${conds.join(" and ")}` : "";
+            const rows = await query(
+              client,
+              `select * from local_tours ${where} order by is_featured desc, featured_order nulls last, updated_at desc`,
+              params,
+            );
+            return rows.map(mapLocalTour);
+          },
+          async get(id: string) {
+            if (!isUuid(id)) return null;
+            const rows = await query(client, "select * from local_tours where id=$1 limit 1", [id]);
+            return rows[0] ? mapLocalTour(rows[0]) : null;
+          },
+          async getBySlug(slug: string) {
+            const rows = await query(client, "select * from local_tours where slug=$1 limit 1", [slug]);
+            return rows[0] ? mapLocalTour(rows[0]) : null;
+          },
+          async create(record: LocalTourRecord) {
+            await query(
+              client,
+              `insert into local_tours (id, slug, code, title, tagline, city,
+                                        duration_hours, distance_km, duration_text, itinerary,
+                                        inclusions, exclusions, extra_km_rate_inr, extra_hour_rate_inr,
+                                        status, is_featured, featured_order,
+                                        published_at, new_until, meta_title, meta_description,
+                                        hero_image_url, gallery, created_at, updated_at)
+               values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23::jsonb,$24,$25)`,
+              [record.id, record.slug, record.code, record.title, record.tagline ?? null, record.city,
+               record.durationHours ?? null, record.distanceKm ?? null, record.durationText ?? null,
+               JSON.stringify(record.itinerary ?? []), record.inclusions ?? [], record.exclusions ?? [],
+               record.extraKmRateInr ?? null, record.extraHourRateInr ?? null,
+               record.status, record.isFeatured, record.featuredOrder ?? null,
+               record.publishedAt ?? null, record.newUntil ?? null, record.metaTitle ?? null,
+               record.metaDescription ?? null, record.heroImageUrl ?? null,
+               JSON.stringify(record.gallery ?? []), record.createdAt, record.updatedAt],
+            );
+            return record;
+          },
+          async update(id: string, patch: Partial<LocalTourRecord>) {
+            if (!isUuid(id)) return null;
+            const colMap: Record<string, string> = {
+              slug: "slug", code: "code", title: "title", tagline: "tagline", city: "city",
+              durationHours: "duration_hours", distanceKm: "distance_km",
+              durationText: "duration_text", itinerary: "itinerary",
+              inclusions: "inclusions", exclusions: "exclusions",
+              extraKmRateInr: "extra_km_rate_inr", extraHourRateInr: "extra_hour_rate_inr",
+              status: "status", isFeatured: "is_featured", featuredOrder: "featured_order",
+              publishedAt: "published_at", newUntil: "new_until",
+              metaTitle: "meta_title", metaDescription: "meta_description",
+              heroImageUrl: "hero_image_url", gallery: "gallery",
+            };
+            const sets: string[] = [];
+            const params: unknown[] = [id];
+            for (const [key, col] of Object.entries(colMap)) {
+              const v = (patch as Record<string, unknown>)[key];
+              if (v === undefined) continue;
+              const isJson = key === "itinerary" || key === "gallery";
+              params.push(isJson ? JSON.stringify(v) : v);
+              sets.push(`${col}=$${params.length}${isJson ? "::jsonb" : ""}`);
+            }
+            if (!sets.length) {
+              const rows = await query(client, "select * from local_tours where id=$1 limit 1", [id]);
+              return rows[0] ? mapLocalTour(rows[0]) : null;
+            }
+            sets.push("updated_at=now()");
+            const rows = await query(client, `update local_tours set ${sets.join(", ")} where id=$1 returning *`, params);
+            return rows[0] ? mapLocalTour(rows[0]) : null;
+          },
+          async listFleetPrices(tourId: string) {
+            const rows = await query(
+              client, "select * from local_tour_fleet_prices where tour_id=$1 order by fleet_code asc", [tourId]);
+            return rows.map(mapLocalTourFleetPrice);
+          },
+          async upsertFleetPrice(tourId: string, fleetCode: string, priceInr: number) {
+            const rows = await query(
+              client,
+              `insert into local_tour_fleet_prices (tour_id, fleet_code, price_inr)
+               values ($1,$2,$3)
+               on conflict (tour_id, fleet_code) do update set
+                 price_inr=excluded.price_inr, updated_at=now()
+               returning *`,
+              [tourId, fleetCode, priceInr],
+            );
+            if (!rows[0]) throw new Error("local_tour_fleet_prices upsert returned no row");
+            return mapLocalTourFleetPrice(rows[0]);
+          },
+        },
     };
   }
 
@@ -1912,6 +2008,47 @@ function mapFleetFareRule(row: Record<string, unknown>): FleetFareRuleRecord {
     perKm: Number(row.per_km),
     driverAllowance: Number(row.driver_allowance),
     nightAllowance: Number(row.night_allowance),
+    createdAt: new Date(String(row.created_at)).toISOString(),
+    updatedAt: new Date(String(row.updated_at)).toISOString(),
+  };
+}
+
+function mapLocalTourFleetPrice(row: Record<string, unknown>): LocalTourFleetPriceRecord {
+  return {
+    id: String(row.id),
+    tourId: String(row.tour_id),
+    fleetCode: String(row.fleet_code),
+    priceInr: Number(row.price_inr),
+    createdAt: new Date(String(row.created_at)).toISOString(),
+    updatedAt: new Date(String(row.updated_at)).toISOString(),
+  };
+}
+
+function mapLocalTour(row: Record<string, unknown>): LocalTourRecord {
+  return {
+    id: String(row.id),
+    slug: String(row.slug),
+    code: String(row.code),
+    title: String(row.title),
+    tagline: row.tagline ? String(row.tagline) : null,
+    city: String(row.city),
+    durationHours: row.duration_hours !== null && row.duration_hours !== undefined ? Number(row.duration_hours) : null,
+    distanceKm: row.distance_km !== null && row.distance_km !== undefined ? Number(row.distance_km) : null,
+    durationText: row.duration_text ? String(row.duration_text) : null,
+    itinerary: Array.isArray(row.itinerary) ? (row.itinerary as LocalTourRecord["itinerary"]) : [],
+    inclusions: Array.isArray(row.inclusions) ? (row.inclusions as string[]) : [],
+    exclusions: Array.isArray(row.exclusions) ? (row.exclusions as string[]) : [],
+    extraKmRateInr: row.extra_km_rate_inr !== null && row.extra_km_rate_inr !== undefined ? Number(row.extra_km_rate_inr) : null,
+    extraHourRateInr: row.extra_hour_rate_inr !== null && row.extra_hour_rate_inr !== undefined ? Number(row.extra_hour_rate_inr) : null,
+    status: row.status as LocalTourRecord["status"],
+    isFeatured: Boolean(row.is_featured),
+    featuredOrder: row.featured_order !== null && row.featured_order !== undefined ? Number(row.featured_order) : null,
+    publishedAt: row.published_at ? new Date(String(row.published_at)).toISOString() : null,
+    newUntil: row.new_until ? new Date(String(row.new_until)).toISOString() : null,
+    metaTitle: row.meta_title ? String(row.meta_title) : null,
+    metaDescription: row.meta_description ? String(row.meta_description) : null,
+    heroImageUrl: row.hero_image_url ? String(row.hero_image_url) : null,
+    gallery: Array.isArray(row.gallery) ? (row.gallery as string[]) : [],
     createdAt: new Date(String(row.created_at)).toISOString(),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
   };

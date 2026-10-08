@@ -237,6 +237,37 @@ mkcard('11e · Public packages — GET /api/v1/packages', [], 'Load', () => api(
 json => { const rows=(json.data&&json.data.items)||[]; if(!rows.length) return '';
   return '<table class="data"><tr><th>slug</th><th>isNew</th><th>status</th></tr>'+rows.map(r=>'<tr><td><a href="/packages/'+r.slug+'" target="_blank">'+r.slug+'</a></td><td>'+!!r.isNew+'</td><td>'+r.status+'</td></tr>').join('')+'</table>'; });
 
+// 12. Local tours (Slice 4)
+mkcard('12 · Tours — GET /api/v1/ops/admin/tours', [
+  {name:'status',label:'status',type:'select',options:['','draft','published','archived'],value:''},
+  {name:'city',label:'city',ph:'Agra'},
+], 'List', b => { const p={}; if(b.status)p.status=b.status; if(b.city)p.city=b.city; return api('GET','/api/v1/ops/admin/tours?'+new URLSearchParams(p)); },
+json => { const rows=(json.data&&json.data.items)||[]; if(!rows.length) return '';
+  return '<table class="data"><tr><th>id</th><th>slug</th><th>city</th><th>status</th></tr>'+rows.map(r=>'<tr><td>'+r.id.slice(0,8)+'</td><td><a href="/tours/'+r.slug+'" target="_blank">'+r.slug+'</a></td><td>'+r.city+'</td><td>'+r.status+'</td></tr>').join('')+'</table>'; });
+mkcard('12b · Create tour — POST /api/v1/ops/admin/tours', [
+  {name:'title',label:'title',value:'Delhi Local 8hr'},
+  {name:'city',label:'city',value:'Delhi'},
+  {name:'durationHours',label:'durationHours',value:'8'},
+  {name:'distanceKm',label:'distanceKm',value:'80'},
+  {name:'extraKmRateInr',label:'extraKmRateInr',value:'14'},
+  {name:'extraHourRateInr',label:'extraHourRateInr',value:'200'},
+], 'Create (draft)', b => api('POST','/api/v1/ops/admin/tours', numify(b,['durationHours','distanceKm','extraKmRateInr','extraHourRateInr'])),
+json => '<div class="meta">id <b>'+((json.data||{}).id)+'</b> slug <b>'+((json.data||{}).slug)+'</b></div>');
+mkcard('12c · Publish / archive tour', [
+  {name:'id',label:'tour id'},
+], 'Publish', b => api('POST','/api/v1/ops/admin/tours/'+encodeURIComponent(b.id)+'/publish'), null,
+[['Archive', b => api('POST','/api/v1/ops/admin/tours/'+encodeURIComponent(b.id)+'/archive')]]);
+mkcard('12d · Tour fleet price — PUT /api/v1/ops/admin/tours/:id/fleets/:code', [
+  {name:'id',label:'tour id'},
+  {name:'code',label:'fleet code',value:'sedan'},
+  {name:'priceInr',label:'priceInr',value:'2200'},
+], 'Upsert price', b => api('PUT','/api/v1/ops/admin/tours/'+encodeURIComponent(b.id)+'/fleets/'+encodeURIComponent(b.code), numify({priceInr:b.priceInr},['priceInr'])), null);
+mkcard('12e · Public tours — GET /api/v1/tours', [
+  {name:'city',label:'city',ph:'Agra'},
+], 'Load', b => api('GET','/api/v1/tours'+(b.city?'?city='+encodeURIComponent(b.city):'')),
+json => { const rows=(json.data&&json.data.items)||[]; if(!rows.length) return '';
+  return '<table class="data"><tr><th>slug</th><th>city</th><th>isNew</th></tr>'+rows.map(r=>'<tr><td><a href="/tours/'+r.slug+'" target="_blank">'+r.slug+'</a></td><td>'+r.city+'</td><td>'+!!r.isNew+'</td></tr>').join('')+'</table>'; });
+
 renderToken();
 </script>
 </body>

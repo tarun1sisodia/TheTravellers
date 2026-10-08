@@ -73,6 +73,9 @@ import type {
   PackageListFilter,
   PackageRecord,
   PackageFleetPriceRecord,
+  LocalTourListFilter,
+  LocalTourRecord,
+  LocalTourFleetPriceRecord,
   ReviewListFilter,
   RentalEnquiryListFilter,
 } from "./types.js";
@@ -117,6 +120,8 @@ export function createMemoryRepositories(nowIso = new Date().toISOString()): Rep
   const slugRedirects = new Map<string, SlugRedirectRecord>();
   const packages = new Map<string, PackageRecord>();
   const packageFleetPrices = new Map<string, PackageFleetPriceRecord>();
+  const localTours = new Map<string, LocalTourRecord>();
+  const localTourFleetPrices = new Map<string, LocalTourFleetPriceRecord>();
   const locks = new Map<string, Promise<void>>();
 
   const tourPackages = new Map<string, TourPackageRecord>();
@@ -1228,6 +1233,68 @@ export function createMemoryRepositories(nowIso = new Date().toISOString()): Rep
           id: crypto.randomUUID(), packageId, fleetCode, priceInr, createdAt: now, updatedAt: now,
         };
         packageFleetPrices.set(rec.id, rec);
+        return clone(rec);
+      },
+    },
+
+    localTours: {
+      async list(filter: LocalTourListFilter = {}) {
+        let rows = [...localTours.values()];
+        if (filter.status) rows = rows.filter((r) => r.status === filter.status);
+        if (filter.featured !== undefined) rows = rows.filter((r) => r.isFeatured === filter.featured);
+        if (filter.city) rows = rows.filter((r) => r.city.toLowerCase() === filter.city!.toLowerCase());
+        if (filter.q) {
+          const q = filter.q.toLowerCase();
+          rows = rows.filter((r) => [r.title, r.slug, r.code].some((v) => v.toLowerCase().includes(q)));
+        }
+        return rows
+          .sort((a, b) => Number(b.isFeatured) - Number(a.isFeatured) || b.updatedAt.localeCompare(a.updatedAt))
+          .map(clone);
+      },
+      async get(id: string) {
+        const r = localTours.get(id);
+        return r ? clone(r) : null;
+      },
+      async getBySlug(slug: string) {
+        for (const r of localTours.values()) if (r.slug === slug) return clone(r);
+        return null;
+      },
+      async create(record: LocalTourRecord) {
+        for (const r of localTours.values()) {
+          if (r.slug === record.slug) throw new Error("duplicate slug");
+          if (r.code === record.code) throw new Error("duplicate code");
+        }
+        localTours.set(record.id, clone(record));
+        return clone(record);
+      },
+      async update(id: string, patch: Partial<LocalTourRecord>) {
+        const r = localTours.get(id);
+        if (!r) return null;
+        const clean: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(patch)) if (v !== undefined) clean[k] = v;
+        const updated = { ...clone(r), ...clone(clean), id, updatedAt: new Date().toISOString() };
+        localTours.set(id, updated as LocalTourRecord);
+        return clone(updated as LocalTourRecord);
+      },
+      async listFleetPrices(tourId: string) {
+        return [...localTourFleetPrices.values()]
+          .filter((r) => r.tourId === tourId)
+          .sort((a, b) => a.fleetCode.localeCompare(b.fleetCode))
+          .map(clone);
+      },
+      async upsertFleetPrice(tourId: string, fleetCode: string, priceInr: number) {
+        const now = new Date().toISOString();
+        for (const r of localTourFleetPrices.values()) {
+          if (r.tourId === tourId && r.fleetCode === fleetCode) {
+            r.priceInr = priceInr;
+            r.updatedAt = now;
+            return clone(r);
+          }
+        }
+        const rec: LocalTourFleetPriceRecord = {
+          id: crypto.randomUUID(), tourId, fleetCode, priceInr, createdAt: now, updatedAt: now,
+        };
+        localTourFleetPrices.set(rec.id, rec);
         return clone(rec);
       },
     },

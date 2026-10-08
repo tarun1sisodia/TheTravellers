@@ -316,6 +316,16 @@ export type Repositories = {
     listFleetPrices(packageId: string): Promise<PackageFleetPriceRecord[]>;
     upsertFleetPrice(packageId: string, fleetCode: string, priceInr: number): Promise<PackageFleetPriceRecord>;
   };
+
+  localTours: {
+    list(filter?: LocalTourListFilter): Promise<LocalTourRecord[]>;
+    get(id: string): Promise<LocalTourRecord | null>;
+    getBySlug(slug: string): Promise<LocalTourRecord | null>;
+    create(record: LocalTourRecord): Promise<LocalTourRecord>;
+    update(id: string, patch: Partial<LocalTourRecord>): Promise<LocalTourRecord | null>;
+    listFleetPrices(tourId: string): Promise<LocalTourFleetPriceRecord[]>;
+    upsertFleetPrice(tourId: string, fleetCode: string, priceInr: number): Promise<LocalTourFleetPriceRecord>;
+  };
 };
 
 export type DeviceRegistrationRecord = {
@@ -464,6 +474,52 @@ export type PackageListFilter = {
 export type PackageFleetPriceRecord = {
   id: string;
   packageId: string;
+  fleetCode: string;
+  priceInr: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type LocalTourStatus = "draft" | "published" | "archived";
+
+export type LocalTourRecord = {
+  id: string;
+  slug: string;
+  code: string;
+  title: string;
+  tagline?: string | null;
+  city: string;
+  durationHours?: number | null;
+  distanceKm?: number | null;
+  durationText?: string | null;
+  itinerary: Array<{ day: number; title: string; description?: string }>;
+  inclusions: string[];
+  exclusions: string[];
+  extraKmRateInr?: number | null;
+  extraHourRateInr?: number | null;
+  status: LocalTourStatus;
+  isFeatured: boolean;
+  featuredOrder?: number | null;
+  publishedAt?: string | null;
+  newUntil?: string | null;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
+  heroImageUrl?: string | null;
+  gallery: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type LocalTourListFilter = {
+  status?: LocalTourStatus;
+  featured?: boolean;
+  q?: string;
+  city?: string;
+};
+
+export type LocalTourFleetPriceRecord = {
+  id: string;
+  tourId: string;
   fleetCode: string;
   priceInr: number;
   createdAt: string;

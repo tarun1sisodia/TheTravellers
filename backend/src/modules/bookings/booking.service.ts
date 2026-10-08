@@ -52,6 +52,21 @@ async function resolveBookingSelection(
         };
       }
     }
+    // Slice 4: canonical local tours first for kind=local source=catalog.
+    if (selection.kind === "local" && selection.source === "catalog") {
+      const tour =
+        (await db.localTours.get(selection.id).catch(() => null)) ??
+        (await db.localTours.getBySlug(selection.slug ?? selection.id));
+      if (tour && tour.status === "published") {
+        if (selection.slug && selection.slug !== tour.slug) {
+          throw Errors.conflict("BOOKING_SELECTION_CHANGED", "The selected tour changed. Refresh and review your trip again.");
+        }
+        return {
+          selection: { ...selection, id: tour.id, slug: tour.slug, name: tour.title },
+          selectedCatalogItemId: null,
+        };
+      }
+    }
     const item = await db.catalog.getById(selection.id);
     const availability = item && (item as typeof item & { availability?: string }).availability;
     if (!item || item.status !== "published" || availability === "unavailable") {

@@ -108,6 +108,26 @@ export function createFareService(fareVersion: string, db?: Repositories) {
           }
         }
 
+        // 0b. Canonical local tours (Slice 4) — own pricing context.
+        if (input.packageId && !dossierFleetPrices) {
+          const tour =
+            (await db.localTours.get(input.packageId)) ??
+            (await db.localTours.getBySlug(input.packageId));
+          if (tour && tour.status === "published") {
+            const prices = await db.localTours.listFleetPrices(tour.id);
+            const fleetPrices: Record<string, number> = {};
+            for (const p of prices) fleetPrices[p.fleetCode] = p.priceInr;
+            if (Object.keys(fleetPrices).length > 0) {
+              dossierFleetPrices = fleetPrices;
+              dossierCatalogItemType = "tour";
+              dossierUsePerKm = false;
+              dossierPackageName = tour.title;
+              dossierPackageDuration = tour.durationText ?? undefined;
+              dossierPackageBasePrice = Math.min(...Object.values(fleetPrices));
+            }
+          }
+        }
+
         // 1. Tour packages
         if (input.packageId && !dossierFleetPrices) {
           const tourPkg =
