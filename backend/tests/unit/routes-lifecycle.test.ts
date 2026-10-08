@@ -34,7 +34,7 @@ describe("Slice 2 — route publishing lifecycle", () => {
 
     const list = await routes.listPublishedRoutes({ limit: 20 });
     expect(list).toHaveLength(1);
-    expect(list[0].isNew).toBe(true); // derived, not stored
+    expect(list[0]!.isNew).toBe(true); // derived, not stored
     expect(list[0]).not.toHaveProperty("is_new");
   });
 
@@ -88,7 +88,7 @@ describe("Slice 2 — route publishing lifecycle", () => {
     const old = new Date(Date.now() - 40 * 24 * 3600 * 1000).toISOString();
     await db.routes.update(created.id, { publishedAt: old });
     const list = await routes.listPublishedRoutes({ limit: 20 });
-    expect(list[0].isNew).toBe(false);
+    expect(list[0]!.isNew).toBe(false);
   });
 
   it("quote with routeSlug uses the published route's fixed fleet fare", async () => {

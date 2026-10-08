@@ -212,6 +212,31 @@ mkcard('10f · Public routes — GET /api/v1/routes', [
 json => { const rows=(json.data&&json.data.items)||[]; if(!rows.length) return '';
   return '<table class="data"><tr><th>slug</th><th>isNew</th><th>status</th></tr>'+rows.map(r=>'<tr><td><a href="/routes/'+r.slug+'" target="_blank">'+r.slug+'</a></td><td>'+!!r.isNew+'</td><td>'+r.status+'</td></tr>').join('')+'</table>'; });
 
+// 11. Packages (Slice 3)
+mkcard('11 · Packages — GET /api/v1/ops/admin/packages', [
+  {name:'status',label:'status',type:'select',options:['','draft','published','archived'],value:''},
+], 'List', b => api('GET','/api/v1/ops/admin/packages'+(b.status?'?status='+b.status:'')),
+json => { const rows=(json.data&&json.data.items)||[]; if(!rows.length) return '';
+  return '<table class="data"><tr><th>id</th><th>slug</th><th>code</th><th>status</th></tr>'+rows.map(r=>'<tr><td>'+r.id.slice(0,8)+'</td><td><a href="/packages/'+r.slug+'" target="_blank">'+r.slug+'</a></td><td>'+r.code+'</td><td>'+r.status+'</td></tr>').join('')+'</table>'; });
+mkcard('11b · Create package — POST /api/v1/ops/admin/packages', [
+  {name:'title',label:'title',value:'Mathura Day Trip'},
+  {name:'originCity',label:'originCity',value:'Agra'},
+  {name:'durationText',label:'durationText',value:'1 day'},
+], 'Create (draft)', b => api('POST','/api/v1/ops/admin/packages', b),
+json => '<div class="meta">id <b>'+((json.data||{}).id)+'</b> slug <b>'+((json.data||{}).slug)+'</b></div>');
+mkcard('11c · Publish / archive package', [
+  {name:'id',label:'package id'},
+], 'Publish', b => api('POST','/api/v1/ops/admin/packages/'+encodeURIComponent(b.id)+'/publish'), null,
+[['Archive', b => api('POST','/api/v1/ops/admin/packages/'+encodeURIComponent(b.id)+'/archive')]]);
+mkcard('11d · Package fleet price — PUT /api/v1/ops/admin/packages/:id/fleets/:code', [
+  {name:'id',label:'package id'},
+  {name:'code',label:'fleet code',value:'sedan'},
+  {name:'priceInr',label:'priceInr',value:'2999'},
+], 'Upsert price', b => api('PUT','/api/v1/ops/admin/packages/'+encodeURIComponent(b.id)+'/fleets/'+encodeURIComponent(b.code), numify({priceInr:b.priceInr},['priceInr'])), null);
+mkcard('11e · Public packages — GET /api/v1/packages', [], 'Load', () => api('GET','/api/v1/packages'),
+json => { const rows=(json.data&&json.data.items)||[]; if(!rows.length) return '';
+  return '<table class="data"><tr><th>slug</th><th>isNew</th><th>status</th></tr>'+rows.map(r=>'<tr><td><a href="/packages/'+r.slug+'" target="_blank">'+r.slug+'</a></td><td>'+!!r.isNew+'</td><td>'+r.status+'</td></tr>').join('')+'</table>'; });
+
 renderToken();
 </script>
 </body>

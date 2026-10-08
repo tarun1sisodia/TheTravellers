@@ -37,6 +37,21 @@ async function resolveBookingSelection(
   }
 
   if (selection.source === "catalog") {
+    // Slice 3: canonical packages table first; legacy catalog as fallback.
+    if (selection.kind === "package") {
+      const pkg =
+        (await db.packages.get(selection.id).catch(() => null)) ??
+        (await db.packages.getBySlug(selection.slug ?? selection.id));
+      if (pkg && pkg.status === "published") {
+        if (selection.slug && selection.slug !== pkg.slug) {
+          throw Errors.conflict("BOOKING_SELECTION_CHANGED", "The selected package changed. Refresh and review your trip again.");
+        }
+        return {
+          selection: { ...selection, id: pkg.id, slug: pkg.slug, name: pkg.title },
+          selectedCatalogItemId: null,
+        };
+      }
+    }
     const item = await db.catalog.getById(selection.id);
     const availability = item && (item as typeof item & { availability?: string }).availability;
     if (!item || item.status !== "published" || availability === "unavailable") {

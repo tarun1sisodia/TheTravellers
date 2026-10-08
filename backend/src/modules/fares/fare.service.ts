@@ -87,8 +87,29 @@ export function createFareService(fareVersion: string, db?: Repositories) {
       let dossierPackageBasePrice: number | undefined;
 
       if (db) {
-        // 1. Tour packages
+        // 0. Canonical packages (Slice 3) — fixed per-fleet prices, isolated
+        //    from route-rate changes. Takes precedence over legacy dossier rows.
         if (input.packageId) {
+          const pkg =
+            (await db.packages.get(input.packageId)) ??
+            (await db.packages.getBySlug(input.packageId));
+          if (pkg && pkg.status === "published") {
+            const prices = await db.packages.listFleetPrices(pkg.id);
+            const fleetPrices: Record<string, number> = {};
+            for (const p of prices) fleetPrices[p.fleetCode] = p.priceInr;
+            if (Object.keys(fleetPrices).length > 0) {
+              dossierFleetPrices = fleetPrices;
+              dossierCatalogItemType = "tour";
+              dossierUsePerKm = false;
+              dossierPackageName = pkg.title;
+              dossierPackageDuration = pkg.durationText ?? undefined;
+              dossierPackageBasePrice = Math.min(...Object.values(fleetPrices));
+            }
+          }
+        }
+
+        // 1. Tour packages
+        if (input.packageId && !dossierFleetPrices) {
           const tourPkg =
             (await db.tourPackages.getById(input.packageId)) ??
             (await db.tourPackages.getByCode(input.packageId));

@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Repositories, RouteRecord, RouteFleetFareRecord } from "../../db/types.js";
 import { createRouteService, isRouteNew } from "./route.service.js";
+import { createPackageService } from "../packages/package.service.js";
 
 // Slice 2: reusable customer templates. Admin creates records; these templates
 // render published records. No manual page per record.
@@ -39,19 +40,31 @@ ${jsonLd ? `<script type="application/ld+json">${jsonLd}</script>` : ""}
 export function registerRoutePages(app: FastifyInstance, deps: { db: Repositories }) {
   const service = createRouteService(deps);
 
-  // Homepage: featured published routes (data-first; design later)
+  // Homepage: featured published routes + packages (data-first; design later)
   app.get("/", async (_req: FastifyRequest, reply: FastifyReply) => {
-    const featured = await service.listPublishedRoutes({ featured: true, limit: 8 });
-    const cards = featured.map((r) => `
+    const packageService = createPackageService(deps);
+    const [featured, featuredPkgs] = await Promise.all([
+      service.listPublishedRoutes({ featured: true, limit: 8 }),
+      packageService.listPublishedPackages({ featured: true, limit: 8 }),
+    ]);
+    const routeCards = featured.map((r) => `
       <div class="card">
         <h3 style="margin:0 0 6px"><a href="/routes/${esc(r.slug)}">${esc(r.originCity)} → ${esc(r.destinationCity)}</a>
         ${r.isNew ? '<span class="badge">NEW</span>' : ""}</h3>
         <div class="meta">${esc(r.distanceKm ? r.distanceKm + " km" : "")} ${esc(r.durationText ?? "")} · ${esc(r.tripType)}</div>
       </div>`).join("");
+    const pkgCards = featuredPkgs.map((p) => `
+      <div class="card">
+        <h3 style="margin:0 0 6px"><a href="/packages/${esc(p.slug)}">${esc(p.title)}</a>
+        ${p.isNew ? '<span class="badge">NEW</span>' : ""}</h3>
+        <div class="meta">${esc(p.durationText ?? "")} · ${esc(p.code)}</div>
+      </div>`).join("");
     return reply.type("text/html").send(shell(
       "TheTravellers — Taxi & Tour Booking",
       "Book one-way taxis, round trips, tour packages and local sightseeing across India.",
-      `<h1>TheTravellers</h1><p class="meta">Featured routes</p>${cards || '<p class="meta">No featured routes yet.</p>'}`,
+      `<h1>TheTravellers</h1>
+       <h2>Featured routes</h2>${routeCards || '<p class="meta">No featured routes yet.</p>'}
+       <h2>Featured packages</h2>${pkgCards || '<p class="meta">No featured packages yet.</p>'}`,
     ));
   });
 

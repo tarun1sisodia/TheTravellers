@@ -16,7 +16,7 @@ import type {
   ReviewRecord,
   WebhookEventRecord,
 } from "../types/domain.js";
-import type { DeviceRegistrationRecord, FareRuleRecord, FleetRecord, FleetFareRuleRecord, InquiryListFilter, RentalEnquiryListFilter, PaymentListFilter, Repositories, RouteListFilter, RouteRecord, RouteFleetFareRecord, RouteChargeRecord, SlugRedirectRecord } from "./types.js";
+import type { DeviceRegistrationRecord, FareRuleRecord, FleetRecord, FleetFareRuleRecord, InquiryListFilter, RentalEnquiryListFilter, PaymentListFilter, Repositories, RouteListFilter, RouteRecord, RouteFleetFareRecord, RouteChargeRecord, SlugRedirectRecord, PackageListFilter, PackageRecord, PackageFleetPriceRecord } from "./types.js";
 import type { RouteCatalogRecord } from "./route-catalog-types.js";
 import type {
   CancellationPolicyRecord,
@@ -1771,6 +1771,100 @@ export async function createPostgresRepositories(databaseUrl: string): Promise<R
             );
           },
         },
+
+        packages: {
+          async list(filter: PackageListFilter = {}) {
+            const conds: string[] = [];
+            const params: unknown[] = [];
+            if (filter.status) { params.push(filter.status); conds.push(`status=$${params.length}`); }
+            if (filter.featured !== undefined) { params.push(filter.featured); conds.push(`is_featured=$${params.length}`); }
+            if (filter.q) { params.push(`%${filter.q}%`); conds.push(`(title ilike $${params.length} or slug ilike $${params.length} or code ilike $${params.length})`); }
+            const where = conds.length ? `where ${conds.join(" and ")}` : "";
+            const rows = await query(
+              client,
+              `select * from packages ${where} order by is_featured desc, featured_order nulls last, updated_at desc`,
+              params,
+            );
+            return rows.map(mapPackage);
+          },
+          async get(id: string) {
+            if (!isUuid(id)) return null;
+            const rows = await query(client, "select * from packages where id=$1 limit 1", [id]);
+            return rows[0] ? mapPackage(rows[0]) : null;
+          },
+          async getBySlug(slug: string) {
+            const rows = await query(client, "select * from packages where slug=$1 limit 1", [slug]);
+            return rows[0] ? mapPackage(rows[0]) : null;
+          },
+          async create(record: PackageRecord) {
+            await query(
+              client,
+              `insert into packages (id, slug, code, title, tagline, origin_city, corridor,
+                                     duration_days, duration_nights, duration_text, itinerary,
+                                     inclusions, exclusions, status, is_featured, featured_order,
+                                     published_at, new_until, meta_title, meta_description,
+                                     hero_image_url, gallery, created_at, updated_at)
+               values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22::jsonb,$23,$24)`,
+              [record.id, record.slug, record.code, record.title, record.tagline ?? null,
+               record.originCity ?? null, record.corridor ?? null, record.durationDays ?? null,
+               record.durationNights ?? null, record.durationText ?? null,
+               JSON.stringify(record.itinerary ?? []), record.inclusions ?? [], record.exclusions ?? [],
+               record.status, record.isFeatured, record.featuredOrder ?? null,
+               record.publishedAt ?? null, record.newUntil ?? null, record.metaTitle ?? null,
+               record.metaDescription ?? null, record.heroImageUrl ?? null,
+               JSON.stringify(record.gallery ?? []), record.createdAt, record.updatedAt],
+            );
+            return record;
+          },
+          async update(id: string, patch: Partial<PackageRecord>) {
+            if (!isUuid(id)) return null;
+            const colMap: Record<string, string> = {
+              slug: "slug", code: "code", title: "title", tagline: "tagline",
+              originCity: "origin_city", corridor: "corridor",
+              durationDays: "duration_days", durationNights: "duration_nights",
+              durationText: "duration_text", itinerary: "itinerary",
+              inclusions: "inclusions", exclusions: "exclusions",
+              status: "status", isFeatured: "is_featured", featuredOrder: "featured_order",
+              publishedAt: "published_at", newUntil: "new_until",
+              metaTitle: "meta_title", metaDescription: "meta_description",
+              heroImageUrl: "hero_image_url", gallery: "gallery",
+            };
+            const sets: string[] = [];
+            const params: unknown[] = [id];
+            for (const [key, col] of Object.entries(colMap)) {
+              const v = (patch as Record<string, unknown>)[key];
+              if (v === undefined) continue;
+              const isJson = key === "itinerary" || key === "gallery";
+              params.push(isJson ? JSON.stringify(v) : v);
+              sets.push(`${col}=$${params.length}${isJson ? "::jsonb" : ""}`);
+            }
+            if (!sets.length) {
+              const rows = await query(client, "select * from packages where id=$1 limit 1", [id]);
+              return rows[0] ? mapPackage(rows[0]) : null;
+            }
+            sets.push("updated_at=now()");
+            const rows = await query(client, `update packages set ${sets.join(", ")} where id=$1 returning *`, params);
+            return rows[0] ? mapPackage(rows[0]) : null;
+          },
+          async listFleetPrices(packageId: string) {
+            const rows = await query(
+              client, "select * from package_fleet_prices where package_id=$1 order by fleet_code asc", [packageId]);
+            return rows.map(mapPackageFleetPrice);
+          },
+          async upsertFleetPrice(packageId: string, fleetCode: string, priceInr: number) {
+            const rows = await query(
+              client,
+              `insert into package_fleet_prices (package_id, fleet_code, price_inr)
+               values ($1,$2,$3)
+               on conflict (package_id, fleet_code) do update set
+                 price_inr=excluded.price_inr, updated_at=now()
+               returning *`,
+              [packageId, fleetCode, priceInr],
+            );
+            if (!rows[0]) throw new Error("package_fleet_prices upsert returned no row");
+            return mapPackageFleetPrice(rows[0]);
+          },
+        },
     };
   }
 
@@ -1818,6 +1912,46 @@ function mapFleetFareRule(row: Record<string, unknown>): FleetFareRuleRecord {
     perKm: Number(row.per_km),
     driverAllowance: Number(row.driver_allowance),
     nightAllowance: Number(row.night_allowance),
+    createdAt: new Date(String(row.created_at)).toISOString(),
+    updatedAt: new Date(String(row.updated_at)).toISOString(),
+  };
+}
+
+function mapPackageFleetPrice(row: Record<string, unknown>): PackageFleetPriceRecord {
+  return {
+    id: String(row.id),
+    packageId: String(row.package_id),
+    fleetCode: String(row.fleet_code),
+    priceInr: Number(row.price_inr),
+    createdAt: new Date(String(row.created_at)).toISOString(),
+    updatedAt: new Date(String(row.updated_at)).toISOString(),
+  };
+}
+
+function mapPackage(row: Record<string, unknown>): PackageRecord {
+  return {
+    id: String(row.id),
+    slug: String(row.slug),
+    code: String(row.code),
+    title: String(row.title),
+    tagline: row.tagline ? String(row.tagline) : null,
+    originCity: row.origin_city ? String(row.origin_city) : null,
+    corridor: row.corridor ? String(row.corridor) : null,
+    durationDays: row.duration_days !== null && row.duration_days !== undefined ? Number(row.duration_days) : null,
+    durationNights: row.duration_nights !== null && row.duration_nights !== undefined ? Number(row.duration_nights) : null,
+    durationText: row.duration_text ? String(row.duration_text) : null,
+    itinerary: Array.isArray(row.itinerary) ? (row.itinerary as PackageRecord["itinerary"]) : [],
+    inclusions: Array.isArray(row.inclusions) ? (row.inclusions as string[]) : [],
+    exclusions: Array.isArray(row.exclusions) ? (row.exclusions as string[]) : [],
+    status: row.status as PackageRecord["status"],
+    isFeatured: Boolean(row.is_featured),
+    featuredOrder: row.featured_order !== null && row.featured_order !== undefined ? Number(row.featured_order) : null,
+    publishedAt: row.published_at ? new Date(String(row.published_at)).toISOString() : null,
+    newUntil: row.new_until ? new Date(String(row.new_until)).toISOString() : null,
+    metaTitle: row.meta_title ? String(row.meta_title) : null,
+    metaDescription: row.meta_description ? String(row.meta_description) : null,
+    heroImageUrl: row.hero_image_url ? String(row.hero_image_url) : null,
+    gallery: Array.isArray(row.gallery) ? (row.gallery as string[]) : [],
     createdAt: new Date(String(row.created_at)).toISOString(),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
   };

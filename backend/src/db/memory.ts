@@ -70,6 +70,9 @@ import type {
   RouteFleetFareRecord,
   RouteChargeRecord,
   SlugRedirectRecord,
+  PackageListFilter,
+  PackageRecord,
+  PackageFleetPriceRecord,
   ReviewListFilter,
   RentalEnquiryListFilter,
 } from "./types.js";
@@ -112,6 +115,8 @@ export function createMemoryRepositories(nowIso = new Date().toISOString()): Rep
   const routeFleetFares = new Map<string, RouteFleetFareRecord>();
   const routeCharges = new Map<string, RouteChargeRecord>();
   const slugRedirects = new Map<string, SlugRedirectRecord>();
+  const packages = new Map<string, PackageRecord>();
+  const packageFleetPrices = new Map<string, PackageFleetPriceRecord>();
   const locks = new Map<string, Promise<void>>();
 
   const tourPackages = new Map<string, TourPackageRecord>();
@@ -1163,6 +1168,67 @@ export function createMemoryRepositories(nowIso = new Date().toISOString()): Rep
         slugRedirects.set(oldSlug, {
           oldSlug, entityType, newSlug, createdAt: new Date().toISOString(),
         });
+      },
+    },
+
+    packages: {
+      async list(filter: PackageListFilter = {}) {
+        let rows = [...packages.values()];
+        if (filter.status) rows = rows.filter((r) => r.status === filter.status);
+        if (filter.featured !== undefined) rows = rows.filter((r) => r.isFeatured === filter.featured);
+        if (filter.q) {
+          const q = filter.q.toLowerCase();
+          rows = rows.filter((r) => [r.title, r.slug, r.code].some((v) => v.toLowerCase().includes(q)));
+        }
+        return rows
+          .sort((a, b) => Number(b.isFeatured) - Number(a.isFeatured) || b.updatedAt.localeCompare(a.updatedAt))
+          .map(clone);
+      },
+      async get(id: string) {
+        const r = packages.get(id);
+        return r ? clone(r) : null;
+      },
+      async getBySlug(slug: string) {
+        for (const r of packages.values()) if (r.slug === slug) return clone(r);
+        return null;
+      },
+      async create(record: PackageRecord) {
+        for (const r of packages.values()) {
+          if (r.slug === record.slug) throw new Error("duplicate slug");
+          if (r.code === record.code) throw new Error("duplicate code");
+        }
+        packages.set(record.id, clone(record));
+        return clone(record);
+      },
+      async update(id: string, patch: Partial<PackageRecord>) {
+        const r = packages.get(id);
+        if (!r) return null;
+        const clean: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(patch)) if (v !== undefined) clean[k] = v;
+        const updated = { ...clone(r), ...clone(clean), id, updatedAt: new Date().toISOString() };
+        packages.set(id, updated as PackageRecord);
+        return clone(updated as PackageRecord);
+      },
+      async listFleetPrices(packageId: string) {
+        return [...packageFleetPrices.values()]
+          .filter((r) => r.packageId === packageId)
+          .sort((a, b) => a.fleetCode.localeCompare(b.fleetCode))
+          .map(clone);
+      },
+      async upsertFleetPrice(packageId: string, fleetCode: string, priceInr: number) {
+        const now = new Date().toISOString();
+        for (const r of packageFleetPrices.values()) {
+          if (r.packageId === packageId && r.fleetCode === fleetCode) {
+            r.priceInr = priceInr;
+            r.updatedAt = now;
+            return clone(r);
+          }
+        }
+        const rec: PackageFleetPriceRecord = {
+          id: crypto.randomUUID(), packageId, fleetCode, priceInr, createdAt: now, updatedAt: now,
+        };
+        packageFleetPrices.set(rec.id, rec);
+        return clone(rec);
       },
     },
   };

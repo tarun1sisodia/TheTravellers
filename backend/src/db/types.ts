@@ -306,6 +306,16 @@ export type Repositories = {
     get(oldSlug: string): Promise<SlugRedirectRecord | null>;
     put(oldSlug: string, entityType: SlugRedirectRecord["entityType"], newSlug: string): Promise<void>;
   };
+
+  packages: {
+    list(filter?: PackageListFilter): Promise<PackageRecord[]>;
+    get(id: string): Promise<PackageRecord | null>;
+    getBySlug(slug: string): Promise<PackageRecord | null>;
+    create(record: PackageRecord): Promise<PackageRecord>;
+    update(id: string, patch: Partial<PackageRecord>): Promise<PackageRecord | null>;
+    listFleetPrices(packageId: string): Promise<PackageFleetPriceRecord[]>;
+    upsertFleetPrice(packageId: string, fleetCode: string, priceInr: number): Promise<PackageFleetPriceRecord>;
+  };
 };
 
 export type DeviceRegistrationRecord = {
@@ -414,4 +424,48 @@ export type SlugRedirectRecord = {
   entityType: "route" | "package" | "tour" | "monument";
   newSlug: string;
   createdAt: string;
+};
+
+export type PackageStatus = "draft" | "published" | "archived";
+
+export type PackageRecord = {
+  id: string;
+  slug: string;
+  code: string;
+  title: string;
+  tagline?: string | null;
+  originCity?: string | null;
+  corridor?: string | null;
+  durationDays?: number | null;
+  durationNights?: number | null;
+  durationText?: string | null;
+  itinerary: Array<{ day: number; title: string; description?: string }>;
+  inclusions: string[];
+  exclusions: string[];
+  status: PackageStatus;
+  isFeatured: boolean;
+  featuredOrder?: number | null;
+  publishedAt?: string | null;
+  newUntil?: string | null;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
+  heroImageUrl?: string | null;
+  gallery: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PackageListFilter = {
+  status?: PackageStatus;
+  featured?: boolean;
+  q?: string;
+};
+
+export type PackageFleetPriceRecord = {
+  id: string;
+  packageId: string;
+  fleetCode: string;
+  priceInr: number;
+  createdAt: string;
+  updatedAt: string;
 };
